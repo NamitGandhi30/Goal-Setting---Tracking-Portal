@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+
+# Environment
+.env
+backend/.env
+
+# IDE
+.vscode/
+.idea/
+
+# Build
+.next/
+out/
+dist/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+pgdata/
+
+
+phase-1_impementation_plan.md/
+SCOPE_AND_PHASES.md/
+CLAUDE.md/
+CLAUDE.md
+PDR.pdf
+phase1_implementation_plan.md
+SCOPE_AND_PHASES.md
