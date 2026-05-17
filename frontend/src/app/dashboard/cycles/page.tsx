@@ -2,12 +2,29 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { cycles as cyclesApi } from "@/lib/api";
-import type { GoalCycle, GoalCycleCreatePayload } from "@/lib/types";
+import { cycles as cyclesApi, tracking } from "@/lib/api";
+import type {
+  CheckInPhase,
+  GoalCycle,
+  GoalCycleCreatePayload,
+  TrackingWindow,
+  TrackingWindowCreatePayload,
+  TrackingWindowType,
+} from "@/lib/types";
+
+const WINDOW_TYPES: { value: TrackingWindowType; label: string }[] = [
+  { value: "goal_setting", label: "Goal Setting" },
+  { value: "check_in", label: "Check-in" },
+  { value: "review", label: "Review" },
+];
+
+const PHASES: CheckInPhase[] = ["Q1", "Q2", "Q3", "Q4"];
 
 export default function CyclesPage() {
   const [allCycles, setAllCycles] = useState<GoalCycle[]>([]);
+  const [windows, setWindows] = useState<TrackingWindow[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [showWindowModal, setShowWindowModal] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState<GoalCycleCreatePayload>({
     name: "",
@@ -15,10 +32,27 @@ export default function CyclesPage() {
     start_date: "",
     end_date: "",
   });
+  const [windowForm, setWindowForm] = useState<TrackingWindowCreatePayload>({
+    cycle_id: "",
+    window_type: "check_in",
+    phase: "Q1",
+    name: "",
+    start_date: "",
+    end_date: "",
+  });
 
   const loadCycles = useCallback(async () => {
     try {
-      setAllCycles(await cyclesApi.list());
+      const [cycleData, windowData] = await Promise.all([
+        cyclesApi.list(),
+        tracking.windows(),
+      ]);
+      setAllCycles(cycleData);
+      setWindows(windowData);
+      const active = cycleData.find((cycle) => cycle.is_active) ?? cycleData[0];
+      if (active) {
+        setWindowForm((current) => ({ ...current, cycle_id: current.cycle_id || active.id }));
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not load cycles");
     }
@@ -42,6 +76,29 @@ export default function CyclesPage() {
     }
   };
 
+  const handleCreateWindow = async () => {
+    setError("");
+    try {
+      await tracking.createWindow({
+        ...windowForm,
+        phase: windowForm.window_type === "goal_setting" ? null : windowForm.phase,
+      });
+      toast.success("Tracking window created");
+      setShowWindowModal(false);
+      setWindowForm((current) => ({
+        ...current,
+        window_type: "check_in",
+        phase: "Q1",
+        name: "",
+        start_date: "",
+        end_date: "",
+      }));
+      await loadCycles();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create window");
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-6 py-10">
       <header className="animate-in-up mb-10 flex items-end justify-between gap-6">
@@ -54,13 +111,22 @@ export default function CyclesPage() {
             Create and monitor review windows used by the goal setting workflow.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowModal(true)}
-          className="rounded-md bg-foreground px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-background hover:bg-primary"
-        >
-          New cycle
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setShowWindowModal(true)}
+            className="rounded-md border border-border px-4 py-2 text-[11px] font-bold uppercase tracking-wider hover:bg-secondary"
+          >
+            New window
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowModal(true)}
+            className="rounded-md bg-foreground px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-background hover:bg-primary"
+          >
+            New cycle
+          </button>
+        </div>
       </header>
 
       <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
@@ -99,6 +165,56 @@ export default function CyclesPage() {
         </table>
       </div>
 
+      <section className="mt-8">
+        <div className="mb-4 flex items-center gap-3">
+          <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Tracking windows
+          </h2>
+          <span className="rounded-full bg-secondary px-2.5 py-0.5 text-[10px] font-bold text-muted-foreground ring-1 ring-border">
+            {windows.length}
+          </span>
+        </div>
+        <div className="overflow-hidden rounded-xl border border-border bg-card shadow-sm">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-border bg-secondary/50">
+                <Th>Name</Th>
+                <Th>Type</Th>
+                <Th>Phase</Th>
+                <Th>Start</Th>
+                <Th>End</Th>
+                <Th>Status</Th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border text-sm">
+              {windows.map((window) => (
+                <tr key={window.id}>
+                  <td className="px-6 py-4 font-bold">{window.name}</td>
+                  <td className="px-6 py-4 capitalize text-muted-foreground">
+                    {window.window_type.replace("_", " ")}
+                  </td>
+                  <td className="px-6 py-4 font-mono">{window.phase ?? "-"}</td>
+                  <td className="px-6 py-4 text-muted-foreground">{window.start_date}</td>
+                  <td className="px-6 py-4 text-muted-foreground">{window.end_date}</td>
+                  <td className="px-6 py-4">
+                    <span className={window.is_open ? activeBadge : neutralBadge}>
+                      {window.is_open ? "Open" : "Closed"}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {windows.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="px-6 py-12 text-center text-sm text-muted-foreground">
+                    No tracking windows configured.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       {showModal && (
         <div className="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4" onClick={() => setShowModal(false)}>
           <div className="w-full max-w-xl rounded-xl border border-border bg-card p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
@@ -123,6 +239,55 @@ export default function CyclesPage() {
             <div className="mt-6 flex justify-end gap-2">
               <button type="button" className="rounded-md border border-border px-4 py-2 text-xs font-bold uppercase tracking-wider" onClick={() => setShowModal(false)}>Cancel</button>
               <button type="button" className="rounded-md bg-primary px-4 py-2 text-xs font-bold uppercase tracking-wider text-primary-foreground" onClick={handleCreate}>Create</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showWindowModal && (
+        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/50 p-4" onClick={() => setShowWindowModal(false)}>
+          <div className="w-full max-w-xl rounded-xl border border-border bg-card p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <h2 className="text-lg font-extrabold tracking-tight">Create Tracking Window</h2>
+            {error && <p className="mt-4 rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p>}
+            <div className="mt-5 grid gap-4">
+              <Field label="Cycle">
+                <select className="field" value={windowForm.cycle_id} onChange={(event) => setWindowForm((current) => ({ ...current, cycle_id: event.target.value }))}>
+                  {allCycles.map((cycle) => (
+                    <option key={cycle.id} value={cycle.id}>{cycle.name}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Window name">
+                <input className="field" placeholder="Q1 Check-in Window" value={windowForm.name} onChange={(event) => setWindowForm((current) => ({ ...current, name: event.target.value }))} />
+              </Field>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Type">
+                  <select className="field" value={windowForm.window_type} onChange={(event) => setWindowForm((current) => ({ ...current, window_type: event.target.value as TrackingWindowType }))}>
+                    {WINDOW_TYPES.map((type) => (
+                      <option key={type.value} value={type.value}>{type.label}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Phase">
+                  <select className="field" value={windowForm.phase ?? "Q1"} disabled={windowForm.window_type === "goal_setting"} onChange={(event) => setWindowForm((current) => ({ ...current, phase: event.target.value as CheckInPhase }))}>
+                    {PHASES.map((phase) => (
+                      <option key={phase}>{phase}</option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <Field label="Start date">
+                  <input className="field" type="date" value={windowForm.start_date} onChange={(event) => setWindowForm((current) => ({ ...current, start_date: event.target.value }))} />
+                </Field>
+                <Field label="End date">
+                  <input className="field" type="date" value={windowForm.end_date} onChange={(event) => setWindowForm((current) => ({ ...current, end_date: event.target.value }))} />
+                </Field>
+              </div>
+            </div>
+            <div className="mt-6 flex justify-end gap-2">
+              <button type="button" className="rounded-md border border-border px-4 py-2 text-xs font-bold uppercase tracking-wider" onClick={() => setShowWindowModal(false)}>Cancel</button>
+              <button type="button" className="rounded-md bg-primary px-4 py-2 text-xs font-bold uppercase tracking-wider text-primary-foreground" onClick={handleCreateWindow}>Create</button>
             </div>
           </div>
         </div>

@@ -17,6 +17,7 @@ from app.schemas.check_in import (
     TrackingSummary,
     TrackingWindowCreate,
     TrackingWindowOut,
+    TeamGoalCheckInOut,
 )
 from app.services.tracking_service import TrackingService
 
@@ -47,14 +48,25 @@ async def upsert_checkin(
     )
 
 
-@router.get("/team-checkins", response_model=list[GoalCheckInOut])
+@router.get("/team-checkins", response_model=list[TeamGoalCheckInOut])
 async def list_team_checkins(
     current_user: ManagerOrAdmin,
     db: Annotated[AsyncSession, Depends(get_db)],
     phase: CheckInPhase | None = Query(None),
 ):
     svc = TrackingService(db)
-    return [GoalCheckInOut.model_validate(item) for item in await svc.team_checkins(current_user.id, phase)]
+    result = []
+    for item in await svc.team_checkins(current_user.id, phase):
+        result.append(
+            TeamGoalCheckInOut(
+                **GoalCheckInOut.model_validate(item).model_dump(),
+                goal_title=item.goal.title,
+                owner_name=item.goal.owner.name,
+                owner_employee_id=item.goal.owner.employee_id,
+                thrust_area=item.goal.thrust_area,
+            )
+        )
+    return result
 
 
 @router.put("/checkins/{checkin_id}/manager-review", response_model=GoalCheckInOut)

@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Activity, CalendarDays, CheckCircle2, Gauge, Save } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/context/AuthContext";
 import { cycles, goals as goalsApi, tracking } from "@/lib/api";
 import type {
   CheckInPhase,
   Goal,
   GoalCheckIn,
   GoalCycle,
+  TeamGoalCheckIn,
   TrackingSummary,
   TrackingWindow,
 } from "@/lib/types";
@@ -17,10 +19,13 @@ import { cn } from "@/lib/utils";
 const PHASES: CheckInPhase[] = ["Q1", "Q2", "Q3", "Q4"];
 
 export default function TrackingPage() {
+  const { user } = useAuth();
+  const role = user?.role;
   const [cycle, setCycle] = useState<GoalCycle | null>(null);
   const [phase, setPhase] = useState<CheckInPhase>("Q1");
   const [goals, setGoals] = useState<Goal[]>([]);
   const [checkins, setCheckins] = useState<GoalCheckIn[]>([]);
+  const [teamCheckins, setTeamCheckins] = useState<TeamGoalCheckIn[]>([]);
   const [summary, setSummary] = useState<TrackingSummary | null>(null);
   const [windows, setWindows] = useState<TrackingWindow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -29,23 +34,26 @@ export default function TrackingPage() {
     setLoading(true);
     try {
       const activeCycle = await cycles.active();
-      const [goalData, checkinData, summaryData, windowData] = await Promise.all([
+      const isManager = role === "manager" || role === "admin";
+      const [goalData, checkinData, summaryData, windowData, teamData] = await Promise.all([
         goalsApi.list(activeCycle.id),
         tracking.checkins(activeCycle.id, phase),
         tracking.summary(activeCycle.id, phase),
         tracking.windows(activeCycle.id),
+        isManager ? tracking.teamCheckins(phase) : Promise.resolve([]),
       ]);
       setCycle(activeCycle);
       setGoals(goalData.filter((goal) => goal.status === "approved"));
       setCheckins(checkinData);
       setSummary(summaryData);
       setWindows(windowData);
+      setTeamCheckins(teamData);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not load tracking data");
     } finally {
       setLoading(false);
     }
-  }, [phase]);
+  }, [phase, role]);
 
   useEffect(() => {
     const task = window.setTimeout(() => {
@@ -73,6 +81,19 @@ export default function TrackingPage() {
       await loadData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not save check-in");
+    }
+  };
+
+  const reviewCheckin = async (checkinId: string, comment: string, rating?: number) => {
+    try {
+      await tracking.managerReview(checkinId, {
+        manager_comment: comment || undefined,
+        manager_rating: rating,
+      });
+      toast.success("Manager review saved");
+      await loadData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not save manager review");
     }
   };
 
@@ -174,6 +195,29 @@ export default function TrackingPage() {
           </div>
         </aside>
       </div>
+
+      {(role === "manager" || role === "admin") && (
+        <section className="mt-10">
+          <div className="mb-4 flex items-center gap-3">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              Team check-ins
+            </h2>
+            <span className="rounded-full bg-secondary px-2.5 py-0.5 text-[10px] font-bold text-muted-foreground ring-1 ring-border">
+              {teamCheckins.length}
+            </span>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {teamCheckins.map((checkin) => (
+              <TeamCheckInCard key={checkin.id} checkin={checkin} onReview={reviewCheckin} />
+            ))}
+            {teamCheckins.length === 0 && (
+              <p className="rounded-lg border border-dashed border-border p-8 text-center text-sm text-muted-foreground md:col-span-2">
+                Team check-ins will appear here after employees log progress.
+              </p>
+            )}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -187,6 +231,77 @@ function Metric({ icon: Icon, label, value }: { icon: typeof Gauge; label: strin
       </div>
       <p className="mt-3 font-mono text-3xl font-bold">{value}</p>
     </div>
+  );
+}
+
+function TeamCheckInCard({
+  checkin,
+  onReview,
+}: {
+  checkin: TeamGoalCheckIn;
+  onReview: (checkinId: string, comment: string, rating?: number) => Promise<void>;
+}) {
+  const [comment, setComment] = useState(checkin.manager_comment ?? "");
+  const [rating, setRating] = useState(checkin.manager_rating ? String(checkin.manager_rating) : "");
+
+  return (
+    <article className="rounded-lg border border-border bg-card p-5">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-bold">{checkin.owner_name}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{checkin.goal_title}</p>
+          <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            {checkin.owner_employee_id} / {checkin.thrust_area}
+          </p>
+        </div>
+        <span className="rounded bg-muted px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+          {checkin.progress_status.replace("_", " ")}
+        </span>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-12">
+        <div className="md:col-span-3">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Actual</span>
+          <p className="mt-1 font-mono text-lg font-bold">{checkin.actual_value}</p>
+        </div>
+        <div className="md:col-span-3">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Score</span>
+          <p className="mt-1 font-mono text-lg font-bold">{checkin.progress_score}%</p>
+        </div>
+        <label className="md:col-span-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Rating</span>
+          <input
+            type="number"
+            min={1}
+            max={5}
+            value={rating}
+            onChange={(event) => setRating(event.target.value)}
+            className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm"
+          />
+        </label>
+        <label className="md:col-span-4">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Manager Comment</span>
+          <input
+            value={comment}
+            onChange={(event) => setComment(event.target.value)}
+            className="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+          />
+        </label>
+      </div>
+      {checkin.employee_comment && (
+        <p className="mt-3 rounded-md bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+          Employee: {checkin.employee_comment}
+        </p>
+      )}
+      <div className="mt-4 flex justify-end">
+        <button
+          type="button"
+          onClick={() => void onReview(checkin.id, comment, rating ? Number(rating) : undefined)}
+          className="rounded-md bg-foreground px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-background"
+        >
+          Save Review
+        </button>
+      </div>
+    </article>
   );
 }
 

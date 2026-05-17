@@ -1,11 +1,11 @@
 """Pydantic schemas for Goal endpoints."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
-from app.models.goal import UnitOfMeasure, GoalStatus
+from app.models.goal import GoalCadence, UnitOfMeasure, GoalStatus
 
 
 # ── Request Schemas ──────────────────────────────────────
@@ -16,6 +16,8 @@ class GoalCreate(BaseModel):
     description: str | None = None
     uom: UnitOfMeasure
     target: float = Field(..., gt=0)
+    deadline: date | None = None
+    cadence: GoalCadence = GoalCadence.ANNUAL
     weightage: float = Field(..., ge=10, le=100, description="Must be >= 10%")
 
 
@@ -25,6 +27,8 @@ class GoalUpdate(BaseModel):
     description: str | None = None
     uom: UnitOfMeasure | None = None
     target: float | None = Field(None, gt=0)
+    deadline: date | None = None
+    cadence: GoalCadence | None = None
     weightage: float | None = Field(None, ge=10, le=100)
 
 
@@ -39,6 +43,8 @@ class GoalOut(BaseModel):
     description: str | None
     uom: UnitOfMeasure
     target: float
+    deadline: date | None
+    cadence: GoalCadence
     weightage: float
     status: GoalStatus
     is_shared: bool

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import CurrentUser
 from app.db.session import get_db
 from app.models.check_in import CheckInPhase
-from app.models.goal import UnitOfMeasure
+from app.models.goal import GoalCadence, UnitOfMeasure
 from app.models.goal_cycle import GoalCycle
 from app.schemas.chat import ChatRequest, ChatResponse, ChatSuggestion
 from app.schemas.check_in import CheckInUpsert
@@ -66,7 +66,7 @@ async def chat(
 
     if any(word in normalized for word in ("check in", "check-in", "actual", "achieved", "achievement", "log")):
         goal = _match_goal(normalized, goals)
-        actual = _first_number(normalized)
+        actual = _actual_from_text(normalized)
         if not goal or actual is None:
             return ChatResponse(
                 reply="I can log that, but I need a goal name and actual value. Try: Log Q1 actual 80 for customer experience.",
@@ -112,14 +112,20 @@ async def chat(
             GoalCreate(
                 thrust_area=_thrust_area_from_text(normalized),
                 title=title,
-                uom=UnitOfMeasure.PERCENTAGE if "%" in message or "percent" in normalized else UnitOfMeasure.NUMERIC,
+                uom=_uom_from_text(normalized, message),
                 target=target,
                 weightage=weightage,
+                deadline=_deadline_from_text(normalized),
+                cadence=_cadence_from_text(normalized),
                 description=f"Created from assistant: {message}",
             ),
         )
         return ChatResponse(
-            reply=f"Created goal '{goal.title}' with target {goal.target} and {goal.weightage}% weightage.",
+            reply=(
+                f"Created {goal.cadence.value} goal '{goal.title}' with target {goal.target}, "
+                f"{goal.weightage}% weightage"
+                f"{f' and deadline {goal.deadline.isoformat()}' if goal.deadline else ''}."
+            ),
             intent="goal_create",
             action_taken=True,
         )
@@ -168,6 +174,11 @@ def _first_number(text: str) -> float | None:
     return float(match.group(1)) if match else None
 
 
+def _actual_from_text(text: str) -> float | None:
+    match = re.search(r"(?:actual|achieved|achievement|log)\s*(?:is|of|:)?\s*(\d+(?:\.\d+)?)", text)
+    return float(match.group(1)) if match else _first_number(re.sub(r"\bq[1-4]\b", "", text))
+
+
 def _weightage_from_text(text: str) -> float | None:
     match = re.search(r"(?:weightage|weight|weighted)\s*(?:is|of|:)?\s*(\d+(?:\.\d+)?)", text)
     return float(match.group(1)) if match else None
@@ -185,6 +196,9 @@ def _title_from_text(message: str) -> str:
 
 
 def _thrust_area_from_text(text: str) -> str:
+    thrust_match = re.search(r"thrust\s*area\s*(?:is|as|:)?\s*([a-z0-9 &-]+)", text)
+    if thrust_match:
+        return thrust_match.group(1).strip().title()[:300]
     if "customer" in text:
         return "Customer Experience"
     if "people" in text or "team" in text:
@@ -194,6 +208,43 @@ def _thrust_area_from_text(text: str) -> str:
     if "innovation" in text:
         return "Innovation"
     return "Business Growth"
+
+
+def _cadence_from_text(text: str) -> GoalCadence:
+    if "daily" in text:
+        return GoalCadence.DAILY
+    if "weekly" in text:
+        return GoalCadence.WEEKLY
+    if "monthly" in text:
+        return GoalCadence.MONTHLY
+    if "quarterly" in text:
+        return GoalCadence.QUARTERLY
+    return GoalCadence.ANNUAL
+
+
+def _uom_from_text(text: str, original: str) -> UnitOfMeasure:
+    if "%" in original or "percent" in text or "percentage" in text:
+        return UnitOfMeasure.PERCENTAGE
+    if "currency" in text or "rupee" in text or "rs." in text or "revenue" in text:
+        return UnitOfMeasure.CURRENCY
+    if "hour" in text:
+        return UnitOfMeasure.HOURS
+    if "rating" in text:
+        return UnitOfMeasure.RATING
+    if "count" in text or "number of" in text:
+        return UnitOfMeasure.COUNT
+    if "yes/no" in text or "boolean" in text:
+        return UnitOfMeasure.BOOLEAN
+    return UnitOfMeasure.NUMERIC
+
+
+def _deadline_from_text(text: str):
+    match = re.search(r"(?:deadline|due)\s*(?:is|on|by|:)?\s*(\d{4}-\d{2}-\d{2})", text)
+    if not match:
+        return None
+    from datetime import date
+
+    return date.fromisoformat(match.group(1))
 
 
 def _match_goal(text: str, goals):

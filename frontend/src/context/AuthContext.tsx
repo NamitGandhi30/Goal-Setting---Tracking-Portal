@@ -20,28 +20,32 @@ const AuthContext = createContext<AuthCtx>({
   logout: () => {},
 });
 
-function getStoredToken() {
-  return typeof window === 'undefined' ? null : localStorage.getItem('token');
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(() => getStoredToken());
-  const [loading, setLoading] = useState(() => Boolean(getStoredToken()));
+  const [token, setToken] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   /* Restore session on mount */
   useEffect(() => {
-    const stored = token;
-    if (!stored) return;
+    const task = window.setTimeout(() => {
+      const stored = localStorage.getItem('token');
+      if (!stored) {
+        setLoading(false);
+        return;
+      }
 
-    authApi.me()
-      .then(setUser)
-      .catch(() => {
-        localStorage.removeItem('token');
-        setToken(null);
-      })
-      .finally(() => setLoading(false));
-  }, [token]);
+      setToken(stored);
+      authApi.me()
+        .then(setUser)
+        .catch(() => {
+          localStorage.removeItem('token');
+          setToken(null);
+        })
+        .finally(() => setLoading(false));
+    }, 0);
+
+    return () => window.clearTimeout(task);
+  }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await authApi.login(email, password);

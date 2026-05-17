@@ -30,6 +30,8 @@ export function GoalTable({
               <Th>Thrust Area</Th>
               <Th>Objective</Th>
               <Th className="text-right">Target</Th>
+              <Th className="text-center">Cadence</Th>
+              <Th className="text-right">Deadline</Th>
               <Th className="text-right">Weight</Th>
               <Th className="text-center">UoM</Th>
               {(editable || inlineEditable) && <Th className="w-10" />}
@@ -48,7 +50,7 @@ export function GoalTable({
             ))}
             {slots > 0 && (
               <tr className="bg-secondary/20">
-                <td colSpan={6} className="px-6 py-4 text-center">
+                <td colSpan={8} className="px-6 py-4 text-center">
                   <span className="font-mono text-[10px] uppercase tracking-widest text-zinc-400">
                     {slots} of {capacity} slot{slots === 1 ? "" : "s"} available
                   </span>
@@ -57,7 +59,7 @@ export function GoalTable({
             )}
             {goals.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-6 py-12 text-center text-sm text-muted-foreground">
+                <td colSpan={8} className="px-6 py-12 text-center text-sm text-muted-foreground">
                   No goals yet — add your first objective on the left.
                 </td>
               </tr>
@@ -104,6 +106,8 @@ function GoalRow({
       description: draft.description,
       uom: draft.uom,
       target: draft.target,
+      deadline: draft.deadline,
+      cadence: draft.cadence,
       weightage: Number(draft.weightage),
     });
     setEditing(false);
@@ -147,6 +151,35 @@ function GoalRow({
           />
         ) : (
           goal.target
+        )}
+      </td>
+      <td className="px-6 py-4 text-center">
+        {editing ? (
+          <select
+            value={draft.cadence ?? "Annual"}
+            onChange={(e) => setDraft({ ...draft, cadence: e.target.value as Goal["cadence"] })}
+            className="w-28 rounded border border-border bg-background px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-primary/20"
+          >
+            {["Daily", "Weekly", "Monthly", "Quarterly", "Annual"].map((option) => (
+              <option key={option}>{option}</option>
+            ))}
+          </select>
+        ) : (
+          <span className="font-mono text-[10px] uppercase text-muted-foreground">
+            {goal.cadence ?? "Annual"}
+          </span>
+        )}
+      </td>
+      <td className="px-6 py-4 text-right font-mono text-sm text-muted-foreground">
+        {editing ? (
+          <input
+            type="date"
+            value={draft.deadline ?? ""}
+            onChange={(e) => setDraft({ ...draft, deadline: e.target.value })}
+            className="w-32 rounded border border-border bg-background px-2 py-1 text-right font-mono text-sm outline-none focus:ring-2 focus:ring-primary/20"
+          />
+        ) : (
+          goal.deadline ?? "-"
         )}
       </td>
       <td className="px-6 py-4 text-right font-mono text-sm font-bold">

@@ -9,9 +9,10 @@ import { ValidationBar } from "@/components/goals/ValidationBar";
 import { WeightageRing } from "@/components/goals/WeightageRing";
 import { useAuth } from "@/context/AuthContext";
 import { cycles, goals as goalsApi } from "@/lib/api";
-import type { Goal as UiGoal, SheetStatus, UoM } from "@/lib/goals/types";
+import type { Goal as UiGoal, GoalCadence as UiGoalCadence, SheetStatus, UoM } from "@/lib/goals/types";
 import type {
   Goal as ApiGoal,
+  GoalCadence,
   GoalCreatePayload,
   GoalCycle,
   GoalStatus,
@@ -204,6 +205,8 @@ function toUiGoal(goal: ApiGoal): UiGoal {
     description: goal.description ?? "",
     uom: toUiUom(goal.uom),
     target: goal.uom === "timeline" ? numericTargetToDate(goal.target) : String(goal.target),
+    deadline: goal.deadline ?? undefined,
+    cadence: toUiCadence(goal.cadence),
     weightage: goal.weightage,
     status: toSheetStatus(goal.status),
   };
@@ -216,6 +219,8 @@ function toCreatePayload(goal: Omit<UiGoal, "id">): GoalCreatePayload {
     description: goal.description,
     uom: toApiUom(goal.uom),
     target: toApiTarget(goal.uom, goal.target),
+    deadline: goal.deadline || null,
+    cadence: toApiCadence(goal.cadence),
     weightage: goal.weightage,
   };
 }
@@ -227,11 +232,14 @@ function toUpdatePayload(goal: Partial<UiGoal>): GoalUpdatePayload {
   if (goal.description !== undefined) payload.description = goal.description;
   if (goal.uom !== undefined) payload.uom = toApiUom(goal.uom);
   if (goal.target !== undefined) payload.target = toApiTarget(goal.uom, goal.target);
+  if (goal.deadline !== undefined) payload.deadline = goal.deadline || null;
+  if (goal.cadence !== undefined) payload.cadence = toApiCadence(goal.cadence);
   if (goal.weightage !== undefined) payload.weightage = goal.weightage;
   return payload;
 }
 
 function toApiTarget(uom: UoM | undefined, target: string): number {
+  if (uom === "Yes/No") return 1;
   if (uom === "Timeline") return dateToNumericTarget(target);
   const numericTarget = Number(target);
   return Number.isFinite(numericTarget) && numericTarget > 0 ? numericTarget : 1;
@@ -253,6 +261,11 @@ function toUiUom(uom: UnitOfMeasure): UoM {
   if (uom === "percentage") return "Percent";
   if (uom === "timeline") return "Timeline";
   if (uom === "zero_based") return "Zero-based";
+  if (uom === "count") return "Count";
+  if (uom === "currency") return "Currency";
+  if (uom === "hours") return "Hours";
+  if (uom === "rating") return "Rating";
+  if (uom === "boolean") return "Yes/No";
   return "Numeric";
 }
 
@@ -260,7 +273,28 @@ function toApiUom(uom: UoM): UnitOfMeasure {
   if (uom === "Percent") return "percentage";
   if (uom === "Timeline") return "timeline";
   if (uom === "Zero-based") return "zero_based";
+  if (uom === "Count") return "count";
+  if (uom === "Currency") return "currency";
+  if (uom === "Hours") return "hours";
+  if (uom === "Rating") return "rating";
+  if (uom === "Yes/No") return "boolean";
   return "numeric";
+}
+
+function toUiCadence(cadence: GoalCadence): UiGoalCadence {
+  if (cadence === "daily") return "Daily";
+  if (cadence === "weekly") return "Weekly";
+  if (cadence === "monthly") return "Monthly";
+  if (cadence === "quarterly") return "Quarterly";
+  return "Annual";
+}
+
+function toApiCadence(cadence?: UiGoalCadence): GoalCadence {
+  if (cadence === "Daily") return "daily";
+  if (cadence === "Weekly") return "weekly";
+  if (cadence === "Monthly") return "monthly";
+  if (cadence === "Quarterly") return "quarterly";
+  return "annual";
 }
 
 function toSheetStatus(status: GoalStatus): SheetStatus {

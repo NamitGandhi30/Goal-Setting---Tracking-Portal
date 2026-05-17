@@ -157,6 +157,8 @@ function GoalReviewCard({
         <div className="flex gap-6">
           <Stat label="Target" value={String(goal.target)} />
           <Stat label="UoM" value={goal.uom.replace("_", " ")} />
+          <Stat label="Cadence" value={goal.cadence} />
+          <Stat label="Deadline" value={goal.deadline ?? "-"} />
         </div>
         <div className="flex gap-2">
           <ReturnDialog

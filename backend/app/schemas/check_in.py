@@ -39,6 +39,13 @@ class GoalCheckInOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TeamGoalCheckInOut(GoalCheckInOut):
+    goal_title: str
+    owner_name: str
+    owner_employee_id: str
+    thrust_area: str
+
+
 class TrackingWindowCreate(BaseModel):
     cycle_id: uuid.UUID
     window_type: TrackingWindowType

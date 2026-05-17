@@ -48,6 +48,8 @@ async def create_shared_goal(
         description=body.description,
         uom=body.uom,
         target=body.target,
+        deadline=body.deadline,
+        cadence=body.cadence,
         weightage=body.weightage,
         user_ids=body.assigned_to_user_ids,
     )

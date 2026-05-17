@@ -2,7 +2,17 @@
 
 export type UserRole = 'employee' | 'manager' | 'admin';
 export type GoalStatus = 'draft' | 'pending_approval' | 'approved' | 'returned';
-export type UnitOfMeasure = 'numeric' | 'percentage' | 'timeline' | 'zero_based';
+export type UnitOfMeasure =
+  | 'numeric'
+  | 'percentage'
+  | 'timeline'
+  | 'zero_based'
+  | 'count'
+  | 'currency'
+  | 'hours'
+  | 'rating'
+  | 'boolean';
+export type GoalCadence = 'daily' | 'weekly' | 'monthly' | 'quarterly' | 'annual';
 export type ApprovalAction = 'approved' | 'returned' | 'edited';
 export type CheckInPhase = 'Q1' | 'Q2' | 'Q3' | 'Q4';
 export type ProgressStatus = 'not_started' | 'on_track' | 'at_risk' | 'completed';
@@ -45,6 +55,8 @@ export interface Goal {
   description: string | null;
   uom: UnitOfMeasure;
   target: number;
+  deadline: string | null;
+  cadence: GoalCadence;
   weightage: number;
   status: GoalStatus;
   is_shared: boolean;
@@ -80,6 +92,8 @@ export interface GoalCreatePayload {
   description?: string;
   uom: UnitOfMeasure;
   target: number;
+  deadline?: string | null;
+  cadence?: GoalCadence;
   weightage: number;
 }
 
@@ -89,6 +103,8 @@ export interface GoalUpdatePayload {
   description?: string;
   uom?: UnitOfMeasure;
   target?: number;
+  deadline?: string | null;
+  cadence?: GoalCadence;
   weightage?: number;
 }
 
@@ -98,6 +114,8 @@ export interface SharedGoalCreatePayload {
   description?: string;
   uom: UnitOfMeasure;
   target: number;
+  deadline?: string | null;
+  cadence?: GoalCadence;
   weightage: number;
   assigned_to_user_ids: string[];
 }
@@ -124,6 +142,13 @@ export interface GoalCheckIn {
   updated_by: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface TeamGoalCheckIn extends GoalCheckIn {
+  goal_title: string;
+  owner_name: string;
+  owner_employee_id: string;
+  thrust_area: string;
 }
 
 export interface CheckInPayload {
@@ -159,6 +184,15 @@ export interface TrackingWindow {
   end_date: string;
   is_open: boolean;
   created_at: string;
+}
+
+export interface TrackingWindowCreatePayload {
+  cycle_id: string;
+  window_type: TrackingWindowType;
+  phase?: CheckInPhase | null;
+  name: string;
+  start_date: string;
+  end_date: string;
 }
 
 export interface ChatSuggestion {

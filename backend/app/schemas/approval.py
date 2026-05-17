@@ -1,12 +1,12 @@
 """Pydantic schemas for Approval and Shared Goal endpoints."""
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
 from app.models.goal_approval import ApprovalAction
-from app.models.goal import UnitOfMeasure
+from app.models.goal import GoalCadence, UnitOfMeasure
 
 
 # ── Approval Schemas ─────────────────────────────────────
@@ -22,6 +22,8 @@ class ApprovalEditRequest(BaseModel):
     description: str | None = None
     uom: UnitOfMeasure | None = None
     target: float | None = Field(None, gt=0)
+    deadline: date | None = None
+    cadence: GoalCadence | None = None
     weightage: float | None = Field(None, ge=10, le=100)
     comments: str | None = None
 
@@ -45,6 +47,8 @@ class SharedGoalCreate(BaseModel):
     description: str | None = None
     uom: UnitOfMeasure
     target: float = Field(..., gt=0)
+    deadline: date | None = None
+    cadence: GoalCadence = GoalCadence.ANNUAL
     weightage: float = Field(..., ge=10, le=100)
     assigned_to_user_ids: list[uuid.UUID] = Field(
         ..., min_length=1, description="At least one employee must be assigned"

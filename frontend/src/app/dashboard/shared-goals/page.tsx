@@ -4,13 +4,26 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import { cycles, sharedGoals as sharedApi, users as usersApi } from "@/lib/api";
 import { useAuth } from "@/context/AuthContext";
-import type { GoalCycle, SharedGoalCreatePayload, UnitOfMeasure, User } from "@/lib/types";
+import type { GoalCadence, GoalCycle, SharedGoalCreatePayload, UnitOfMeasure, User } from "@/lib/types";
 
 const UOM_OPTIONS: { value: UnitOfMeasure; label: string }[] = [
   { value: "numeric", label: "Numeric" },
   { value: "percentage", label: "Percentage" },
   { value: "timeline", label: "Timeline" },
   { value: "zero_based", label: "Zero Based" },
+  { value: "count", label: "Count" },
+  { value: "currency", label: "Currency" },
+  { value: "hours", label: "Hours" },
+  { value: "rating", label: "Rating" },
+  { value: "boolean", label: "Yes / No" },
+];
+
+const CADENCE_OPTIONS: { value: GoalCadence; label: string }[] = [
+  { value: "annual", label: "Annual" },
+  { value: "quarterly", label: "Quarterly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "weekly", label: "Weekly" },
+  { value: "daily", label: "Daily" },
 ];
 
 export default function SharedGoalsPage() {
@@ -25,6 +38,8 @@ export default function SharedGoalsPage() {
     description: "",
     uom: "numeric",
     target: 0,
+    deadline: null,
+    cadence: "annual",
     weightage: 10,
   });
 
@@ -59,7 +74,7 @@ export default function SharedGoalsPage() {
       await sharedApi.create({ ...form, assigned_to_user_ids: selectedUsers }, activeCycle?.id);
       toast.success(`Shared goal pushed to ${selectedUsers.length} employees`);
       setSelectedUsers([]);
-      setForm({ thrust_area: "", title: "", description: "", uom: "numeric", target: 0, weightage: 10 });
+      setForm({ thrust_area: "", title: "", description: "", uom: "numeric", target: 0, deadline: null, cadence: "annual", weightage: 10 });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create shared goal");
     }
@@ -114,6 +129,16 @@ export default function SharedGoalsPage() {
                 {UOM_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
             </Field>
+            <Field label="Cadence">
+              <select className="field" value={form.cadence} onChange={(event) => setForm((current) => ({ ...current, cadence: event.target.value as GoalCadence }))}>
+                {CADENCE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Deadline">
+              <input className="field" type="date" value={form.deadline ?? ""} onChange={(event) => setForm((current) => ({ ...current, deadline: event.target.value || null }))} />
+            </Field>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
             <Field label="Target">
               <input className="field" type="number" value={form.target} onChange={(event) => setForm((current) => ({ ...current, target: Number(event.target.value) || 0 }))} />
             </Field>

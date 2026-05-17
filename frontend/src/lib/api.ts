@@ -5,7 +5,8 @@ import type {
   WeightageSummary, GoalCreatePayload, GoalUpdatePayload,
   SharedGoalCreatePayload, GoalCycleCreatePayload,
   CheckInPayload, CheckInPhase, ChatResponse, GoalCheckIn,
-  ManagerCheckInPayload, TrackingSummary, TrackingWindow,
+  ManagerCheckInPayload, TeamGoalCheckIn, TrackingSummary, TrackingWindow,
+  TrackingWindowCreatePayload,
 } from './types';
 
 const API_BASE = '/api/v1';
@@ -143,7 +144,7 @@ export const tracking = {
       body: JSON.stringify(data),
     }),
   teamCheckins: (phase?: CheckInPhase) =>
-    request<GoalCheckIn[]>(`${API_BASE}/tracking/team-checkins${phase ? `?phase=${phase}` : ''}`),
+    request<TeamGoalCheckIn[]>(`${API_BASE}/tracking/team-checkins${phase ? `?phase=${phase}` : ''}`),
   managerReview: (checkinId: string, data: ManagerCheckInPayload) =>
     request<GoalCheckIn>(`${API_BASE}/tracking/checkins/${checkinId}/manager-review`, {
       method: 'PUT',
@@ -153,6 +154,11 @@ export const tracking = {
     request<TrackingSummary>(`${API_BASE}/tracking/summary?cycle_id=${cycleId}&phase=${phase}`),
   windows: (cycleId?: string) =>
     request<TrackingWindow[]>(`${API_BASE}/tracking/windows${cycleId ? `?cycle_id=${cycleId}` : ''}`),
+  createWindow: (data: TrackingWindowCreatePayload) =>
+    request<TrackingWindow>(`${API_BASE}/tracking/windows`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 };
 
 /* Assistant */

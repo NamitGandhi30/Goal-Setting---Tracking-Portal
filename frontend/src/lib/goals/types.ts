@@ -1,6 +1,16 @@
 export type Role = "Employee" | "Manager" | "Admin";
 export type SheetStatus = "Draft" | "Submitted" | "Returned" | "Approved";
-export type UoM = "Numeric" | "Percent" | "Timeline" | "Zero-based";
+export type UoM =
+  | "Numeric"
+  | "Percent"
+  | "Timeline"
+  | "Zero-based"
+  | "Count"
+  | "Currency"
+  | "Hours"
+  | "Rating"
+  | "Yes/No";
+export type GoalCadence = "Daily" | "Weekly" | "Monthly" | "Quarterly" | "Annual";
 export type CheckInPhase = "Q1" | "Q2" | "Q3" | "Q4";
 
 export interface Goal {
@@ -10,6 +20,8 @@ export interface Goal {
   description?: string;
   uom: UoM;
   target: string;
+  deadline?: string;
+  cadence?: GoalCadence;
   weightage: number;
   status?: SheetStatus;
 }

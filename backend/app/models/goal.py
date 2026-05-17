@@ -2,9 +2,9 @@
 
 import uuid
 import enum
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import String, Float, Boolean, ForeignKey, Text, Enum as SAEnum, DateTime
+from sqlalchemy import String, Float, Boolean, ForeignKey, Text, Enum as SAEnum, Date, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -16,6 +16,19 @@ class UnitOfMeasure(str, enum.Enum):
     PERCENTAGE = "percentage"
     TIMELINE = "timeline"
     ZERO_BASED = "zero_based"
+    COUNT = "count"
+    CURRENCY = "currency"
+    HOURS = "hours"
+    RATING = "rating"
+    BOOLEAN = "boolean"
+
+
+class GoalCadence(str, enum.Enum):
+    DAILY = "daily"
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+    QUARTERLY = "quarterly"
+    ANNUAL = "annual"
 
 
 class GoalStatus(str, enum.Enum):
@@ -49,6 +62,12 @@ class Goal(Base):
         nullable=False,
     )
     target: Mapped[float] = mapped_column(Float, nullable=False)
+    deadline: Mapped[date | None] = mapped_column(Date, nullable=True)
+    cadence: Mapped[GoalCadence] = mapped_column(
+        SAEnum(GoalCadence, name="goal_cadence", values_callable=enum_values),
+        nullable=False,
+        default=GoalCadence.ANNUAL,
+    )
     weightage: Mapped[float] = mapped_column(Float, nullable=False)
     status: Mapped[GoalStatus] = mapped_column(
         SAEnum(GoalStatus, name="goal_status", values_callable=enum_values),

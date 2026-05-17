@@ -180,6 +180,8 @@ class TrackingService:
     def calculate_score(uom: UnitOfMeasure, target: float, actual: float) -> float:
         if target <= 0:
             return 0
+        if uom == UnitOfMeasure.BOOLEAN:
+            return 100 if actual >= 1 else 0
         if uom == UnitOfMeasure.ZERO_BASED:
             return 100 if actual <= 0 else max(0, 100 - actual)
         if uom == UnitOfMeasure.TIMELINE:
