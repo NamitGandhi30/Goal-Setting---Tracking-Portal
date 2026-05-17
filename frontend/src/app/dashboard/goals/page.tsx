@@ -203,7 +203,7 @@ function toUiGoal(goal: ApiGoal): UiGoal {
     title: goal.title,
     description: goal.description ?? "",
     uom: toUiUom(goal.uom),
-    target: String(goal.target),
+    target: goal.uom === "timeline" ? numericTargetToDate(goal.target) : String(goal.target),
     weightage: goal.weightage,
     status: toSheetStatus(goal.status),
   };
@@ -215,7 +215,7 @@ function toCreatePayload(goal: Omit<UiGoal, "id">): GoalCreatePayload {
     title: goal.title,
     description: goal.description,
     uom: toApiUom(goal.uom),
-    target: Number(goal.target) || 0,
+    target: toApiTarget(goal.uom, goal.target),
     weightage: goal.weightage,
   };
 }
@@ -226,9 +226,27 @@ function toUpdatePayload(goal: Partial<UiGoal>): GoalUpdatePayload {
   if (goal.title !== undefined) payload.title = goal.title;
   if (goal.description !== undefined) payload.description = goal.description;
   if (goal.uom !== undefined) payload.uom = toApiUom(goal.uom);
-  if (goal.target !== undefined) payload.target = Number(goal.target) || 0;
+  if (goal.target !== undefined) payload.target = toApiTarget(goal.uom, goal.target);
   if (goal.weightage !== undefined) payload.weightage = goal.weightage;
   return payload;
+}
+
+function toApiTarget(uom: UoM | undefined, target: string): number {
+  if (uom === "Timeline") return dateToNumericTarget(target);
+  const numericTarget = Number(target);
+  return Number.isFinite(numericTarget) && numericTarget > 0 ? numericTarget : 1;
+}
+
+function dateToNumericTarget(value: string): number {
+  const [year, month, day] = value.split("-").map(Number);
+  const timestamp = Date.UTC(year, month - 1, day);
+  if (!Number.isFinite(timestamp)) return 1;
+  return Math.floor(timestamp / 86_400_000);
+}
+
+function numericTargetToDate(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return "";
+  return new Date(value * 86_400_000).toISOString().slice(0, 10);
 }
 
 function toUiUom(uom: UnitOfMeasure): UoM {

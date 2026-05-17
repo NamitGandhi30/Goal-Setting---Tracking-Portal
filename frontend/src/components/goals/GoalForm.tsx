@@ -38,7 +38,7 @@ export function GoalForm({ remaining, goalCount, onAdd, disabled }: Props) {
       title: title.trim(),
       description: description.trim(),
       uom,
-      target: uom === "Zero-based" ? "0" : target.trim(),
+      target: uom === "Zero-based" ? "1" : target.trim(),
       weightage: Number(weightage),
     });
     reset();
@@ -148,7 +148,7 @@ export function GoalForm({ remaining, goalCount, onAdd, disabled }: Props) {
           ) : uom === "Zero-based" ? (
             <input
               type="text"
-              value="0"
+              value="1"
               readOnly
               className="w-full rounded-md border border-border bg-secondary px-3 py-2 font-mono text-sm font-bold text-muted-foreground"
             />

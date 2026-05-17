@@ -25,6 +25,31 @@ CYCLE_ID = uuid.UUID("00000000-0000-0000-0000-000000000010")
 
 DEFAULT_PASSWORD = "password123"
 
+ENUM_VALUE_RENAMES = {
+    "user_role": {
+        "EMPLOYEE": "employee",
+        "MANAGER": "manager",
+        "ADMIN": "admin",
+    },
+    "unit_of_measure": {
+        "NUMERIC": "numeric",
+        "PERCENTAGE": "percentage",
+        "TIMELINE": "timeline",
+        "ZERO_BASED": "zero_based",
+    },
+    "goal_status": {
+        "DRAFT": "draft",
+        "PENDING_APPROVAL": "pending_approval",
+        "APPROVED": "approved",
+        "RETURNED": "returned",
+    },
+    "approval_action": {
+        "APPROVED": "approved",
+        "RETURNED": "returned",
+        "EDITED": "edited",
+    },
+}
+
 
 async def wait_for_database(retries: int = 10, delay: float = 1.0) -> None:
     """Wait briefly for Postgres to accept connections during local startup."""
@@ -43,6 +68,54 @@ async def wait_for_database(retries: int = 10, delay: float = 1.0) -> None:
         raise last_error
 
 
+async def normalize_enum_values() -> None:
+    """Repair enum labels created by older SQLAlchemy defaults.
+
+    Earlier dev databases may contain enum labels like ADMIN/NUMERIC because
+    SQLAlchemy's default Enum behavior stores Python enum member names. The
+    migration and current API use lowercase enum values, so normalize the
+    database labels before any ORM query tries to hydrate rows.
+    """
+    async with engine.begin() as conn:
+        for enum_name, value_map in ENUM_VALUE_RENAMES.items():
+            for old_value, new_value in value_map.items():
+                old_exists = await conn.scalar(
+                    text(
+                        """
+                        SELECT EXISTS (
+                            SELECT 1
+                            FROM pg_type t
+                            JOIN pg_enum e ON e.enumtypid = t.oid
+                            WHERE t.typname = :enum_name
+                              AND e.enumlabel = :enum_value
+                        )
+                        """
+                    ),
+                    {"enum_name": enum_name, "enum_value": old_value},
+                )
+                new_exists = await conn.scalar(
+                    text(
+                        """
+                        SELECT EXISTS (
+                            SELECT 1
+                            FROM pg_type t
+                            JOIN pg_enum e ON e.enumtypid = t.oid
+                            WHERE t.typname = :enum_name
+                              AND e.enumlabel = :enum_value
+                        )
+                        """
+                    ),
+                    {"enum_name": enum_name, "enum_value": new_value},
+                )
+                if old_exists and not new_exists:
+                    await conn.execute(
+                        text(
+                            f"ALTER TYPE {enum_name} "
+                            f"RENAME VALUE '{old_value}' TO '{new_value}'"
+                        )
+                    )
+
+
 async def seed():
     await wait_for_database()
 
@@ -50,11 +123,13 @@ async def seed():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    await normalize_enum_values()
+
     async with async_session_factory() as session:
         # Check if data already seeded
         result = await session.execute(select(User).limit(1))
         if result.scalar_one_or_none():
-            print("⚡ Database already seeded. Skipping.")
+            print("Database already seeded. Skipping.")
             return
 
         hashed = hash_password(DEFAULT_PASSWORD)
@@ -172,7 +247,7 @@ async def seed():
         session.add_all(goals)
 
         await session.commit()
-        print("✅ Seed data created successfully!")
+        print("Seed data created successfully!")
         print(f"   Admin:    admin@company.com / {DEFAULT_PASSWORD}")
         print(f"   Manager:  manager@company.com / {DEFAULT_PASSWORD}")
         print(f"   Employee: amit@company.com / {DEFAULT_PASSWORD}")

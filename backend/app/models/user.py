@@ -17,6 +17,10 @@ class UserRole(str, enum.Enum):
     ADMIN = "admin"
 
 
+def enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    return [member.value for member in enum_cls]
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -29,7 +33,9 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     email: Mapped[str] = mapped_column(String(320), unique=True, nullable=False)
     role: Mapped[UserRole] = mapped_column(
-        SAEnum(UserRole, name="user_role"), nullable=False, default=UserRole.EMPLOYEE
+        SAEnum(UserRole, name="user_role", values_callable=enum_values),
+        nullable=False,
+        default=UserRole.EMPLOYEE,
     )
     manager_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True

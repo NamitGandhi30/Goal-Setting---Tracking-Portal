@@ -102,6 +102,7 @@ function GoalRow({
     onUpdate?.(goal.id, {
       title: draft.title,
       description: draft.description,
+      uom: draft.uom,
       target: draft.target,
       weightage: Number(draft.weightage),
     });
@@ -134,9 +135,14 @@ function GoalRow({
       <td className="px-6 py-4 text-right font-mono text-sm font-medium">
         {editing || inlineEditable ? (
           <input
+            type={goal.uom === "Timeline" ? "date" : "text"}
             value={draft.target}
             onChange={(e) => setDraft({ ...draft, target: e.target.value })}
-            onBlur={inlineEditable ? () => onUpdate?.(goal.id, { target: draft.target }) : undefined}
+            onBlur={
+              inlineEditable
+                ? () => onUpdate?.(goal.id, { uom: goal.uom, target: draft.target })
+                : undefined
+            }
             className="w-24 rounded border border-border bg-background px-2 py-1 text-right font-mono text-sm outline-none focus:ring-2 focus:ring-primary/20"
           />
         ) : (

@@ -25,6 +25,10 @@ class GoalStatus(str, enum.Enum):
     RETURNED = "returned"
 
 
+def enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    return [member.value for member in enum_cls]
+
+
 class Goal(Base):
     __tablename__ = "goals"
 
@@ -41,12 +45,13 @@ class Goal(Base):
     title: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     uom: Mapped[UnitOfMeasure] = mapped_column(
-        SAEnum(UnitOfMeasure, name="unit_of_measure"), nullable=False
+        SAEnum(UnitOfMeasure, name="unit_of_measure", values_callable=enum_values),
+        nullable=False,
     )
     target: Mapped[float] = mapped_column(Float, nullable=False)
     weightage: Mapped[float] = mapped_column(Float, nullable=False)
     status: Mapped[GoalStatus] = mapped_column(
-        SAEnum(GoalStatus, name="goal_status"),
+        SAEnum(GoalStatus, name="goal_status", values_callable=enum_values),
         nullable=False,
         default=GoalStatus.DRAFT,
     )

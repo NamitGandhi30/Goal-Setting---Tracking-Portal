@@ -17,6 +17,10 @@ class ApprovalAction(str, enum.Enum):
     EDITED = "edited"
 
 
+def enum_values(enum_cls: type[enum.Enum]) -> list[str]:
+    return [member.value for member in enum_cls]
+
+
 class GoalApproval(Base):
     __tablename__ = "goal_approvals"
 
@@ -30,7 +34,8 @@ class GoalApproval(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
     action: Mapped[ApprovalAction] = mapped_column(
-        SAEnum(ApprovalAction, name="approval_action"), nullable=False
+        SAEnum(ApprovalAction, name="approval_action", values_callable=enum_values),
+        nullable=False,
     )
     comments: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(

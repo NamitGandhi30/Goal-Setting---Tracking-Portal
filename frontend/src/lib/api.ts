@@ -28,11 +28,27 @@ async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new ApiError(body.detail || 'Request failed', res.status);
+    throw new ApiError(formatApiError(body.detail) || 'Request failed', res.status);
   }
 
   if (res.status === 204) return undefined as T;
   return res.json();
+}
+
+function formatApiError(detail: unknown): string {
+  if (typeof detail === 'string') return detail;
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => {
+        if (item && typeof item === 'object' && 'msg' in item) {
+          const path = 'loc' in item && Array.isArray(item.loc) ? item.loc.join('.') : '';
+          return `${path ? `${path}: ` : ''}${String(item.msg)}`;
+        }
+        return String(item);
+      })
+      .join('; ');
+  }
+  return '';
 }
 
 /* ── Auth ──────────────────────────────────────────────── */
