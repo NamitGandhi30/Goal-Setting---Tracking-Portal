@@ -3,6 +3,7 @@
 import { useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { AssistantDock } from "@/components/goals/AssistantDock";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
 
@@ -14,6 +15,7 @@ const ROLE_HOME: Record<string, string> = {
 
 const NAV_ITEMS = [
   { href: "/dashboard/goals", label: "My Goals", roles: ["employee", "manager", "admin"] },
+  { href: "/dashboard/tracking", label: "Track", roles: ["employee", "manager", "admin"] },
   { href: "/dashboard/approvals", label: "Approvals", roles: ["manager", "admin"] },
   { href: "/dashboard/shared-goals", label: "Shared Goals", roles: ["manager", "admin"] },
   { href: "/dashboard/cycles", label: "Cycles", roles: ["admin"] },
@@ -103,6 +105,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         </div>
       </nav>
       {children}
+      <AssistantDock />
     </div>
   );
 }

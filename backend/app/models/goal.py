@@ -81,3 +81,6 @@ class Goal(Base):
     shared_assignments: Mapped[list["SharedGoalAssignment"]] = relationship(  # noqa: F821
         "SharedGoalAssignment", back_populates="source_goal"
     )
+    checkins: Mapped[list["GoalCheckIn"]] = relationship(  # noqa: F821
+        "GoalCheckIn", back_populates="goal"
+    )

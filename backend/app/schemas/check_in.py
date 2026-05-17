@@ -1,0 +1,73 @@
+"""Pydantic schemas for Phase 2 tracking and check-ins."""
+
+import uuid
+from datetime import date, datetime
+
+from pydantic import BaseModel, Field
+
+from app.models.check_in import CheckInPhase, ProgressStatus, TrackingWindowType
+
+
+class CheckInUpsert(BaseModel):
+    phase: CheckInPhase
+    actual_value: float = Field(..., ge=0)
+    employee_comment: str | None = None
+    self_rating: float | None = Field(None, ge=1, le=5)
+
+
+class ManagerCheckInReview(BaseModel):
+    manager_comment: str | None = None
+    manager_rating: float | None = Field(None, ge=1, le=5)
+
+
+class GoalCheckInOut(BaseModel):
+    id: uuid.UUID
+    goal_id: uuid.UUID
+    phase: CheckInPhase
+    actual_value: float
+    progress_score: float
+    progress_status: ProgressStatus
+    employee_comment: str | None
+    manager_comment: str | None
+    self_rating: float | None
+    manager_rating: float | None
+    created_by: uuid.UUID
+    updated_by: uuid.UUID
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TrackingWindowCreate(BaseModel):
+    cycle_id: uuid.UUID
+    window_type: TrackingWindowType
+    phase: CheckInPhase | None = None
+    name: str = Field(..., min_length=1, max_length=200)
+    start_date: date
+    end_date: date
+
+
+class TrackingWindowOut(BaseModel):
+    id: uuid.UUID
+    cycle_id: uuid.UUID
+    window_type: TrackingWindowType
+    phase: CheckInPhase | None
+    name: str
+    start_date: date
+    end_date: date
+    is_open: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TrackingSummary(BaseModel):
+    cycle_id: uuid.UUID
+    phase: CheckInPhase
+    goal_count: int
+    logged_count: int
+    weighted_score: float
+    completed_count: int
+    at_risk_count: int
+    window_open: bool

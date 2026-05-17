@@ -4,6 +4,8 @@ import type {
   TokenResponse, User, GoalCycle, Goal, GoalWithOwner,
   WeightageSummary, GoalCreatePayload, GoalUpdatePayload,
   SharedGoalCreatePayload, GoalCycleCreatePayload,
+  CheckInPayload, CheckInPhase, ChatResponse, GoalCheckIn,
+  ManagerCheckInPayload, TrackingSummary, TrackingWindow,
 } from './types';
 
 const API_BASE = '/api/v1';
@@ -127,4 +129,37 @@ export const sharedGoals = {
       `${API_BASE}/shared-goals${cycleId ? `?cycle_id=${cycleId}` : ''}`,
       { method: 'POST', body: JSON.stringify(data) }
     ),
+};
+
+/* Tracking */
+export const tracking = {
+  checkins: (cycleId: string, phase?: CheckInPhase) =>
+    request<GoalCheckIn[]>(
+      `${API_BASE}/tracking/checkins?cycle_id=${cycleId}${phase ? `&phase=${phase}` : ''}`,
+    ),
+  upsertCheckin: (goalId: string, data: CheckInPayload) =>
+    request<GoalCheckIn>(`${API_BASE}/tracking/goals/${goalId}/checkins`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  teamCheckins: (phase?: CheckInPhase) =>
+    request<GoalCheckIn[]>(`${API_BASE}/tracking/team-checkins${phase ? `?phase=${phase}` : ''}`),
+  managerReview: (checkinId: string, data: ManagerCheckInPayload) =>
+    request<GoalCheckIn>(`${API_BASE}/tracking/checkins/${checkinId}/manager-review`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  summary: (cycleId: string, phase: CheckInPhase) =>
+    request<TrackingSummary>(`${API_BASE}/tracking/summary?cycle_id=${cycleId}&phase=${phase}`),
+  windows: (cycleId?: string) =>
+    request<TrackingWindow[]>(`${API_BASE}/tracking/windows${cycleId ? `?cycle_id=${cycleId}` : ''}`),
+};
+
+/* Assistant */
+export const assistant = {
+  chat: (message: string) =>
+    request<ChatResponse>(`${API_BASE}/assistant/chat`, {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    }),
 };

@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.db.seed import seed
-from app.api.v1 import auth, users, goals, approvals, shared_goals
+from app.api.v1 import assistant, auth, users, goals, approvals, shared_goals, tracking
 
 settings = get_settings()
 logger = logging.getLogger("app")
@@ -49,6 +49,8 @@ app.include_router(users.router, prefix=API_PREFIX)
 app.include_router(goals.router, prefix=API_PREFIX)
 app.include_router(approvals.router, prefix=API_PREFIX)
 app.include_router(shared_goals.router, prefix=API_PREFIX)
+app.include_router(tracking.router, prefix=API_PREFIX)
+app.include_router(assistant.router, prefix=API_PREFIX)
 
 
 # ── Health checks ────────────────────────────────────────
