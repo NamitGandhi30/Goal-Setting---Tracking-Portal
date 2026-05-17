@@ -1,6 +1,7 @@
 """Application configuration via environment variables."""
 
 from pydantic_settings import BaseSettings
+from pydantic import field_validator
 from functools import lru_cache
 
 
@@ -11,7 +12,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # ── Database ─────────────────────────────────────────
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/goals_db"
+    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/goals_db"
 
     # ── Auth (JWT – mock for Phase 1, swap to Entra ID later)
     SECRET_KEY: str = "dev-secret-change-in-production"
@@ -23,6 +24,17 @@ class Settings(BaseSettings):
 
     # ── Dev Utilities ───────────────────────────────────
     AUTO_SEED: bool = False
+
+    @field_validator("DEBUG", mode="before")
+    @classmethod
+    def parse_debug(cls, value: object) -> object:
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"release", "prod", "production"}:
+                return False
+            if normalized in {"dev", "debug", "development"}:
+                return True
+        return value
 
     model_config = {"env_file": ".env", "extra": "ignore"}
 

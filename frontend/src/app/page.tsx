@@ -1,98 +1,116 @@
-'use client';
+"use client";
 
-import { useState, useEffect, type FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/AuthContext';
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const { login, user } = useAuth();
   const router = useRouter();
 
-  // Redirect if already logged in
   useEffect(() => {
-    if (user) {
-      router.replace('/dashboard');
-    }
+    if (user) router.replace("/dashboard/goals");
   }, [user, router]);
 
-  if (user) {
-    return null;
-  }
-
-  const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
+  const handleSubmit = async (event: FormEvent) => {
+    event.preventDefault();
+    setError("");
+    setSubmitting(true);
     try {
       await login(email, password);
-      router.push('/dashboard');
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Login failed');
+      router.push("/dashboard/goals");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign in failed");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
+  if (user) return null;
+
   return (
-    <div className="login-page">
-      <div className="login-card glass-card">
-        <h1>GoalForge</h1>
-        <p className="subtitle">Sign in to your Goal Setting &amp; Tracking Portal</p>
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="w-full max-w-sm">
+        <div className="mb-8 text-center">
+          <div className="mx-auto mb-3 size-8 rounded-sm bg-primary" />
+          <h1 className="text-2xl font-extrabold tracking-tight">Atomberg Goal Portal</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Sign in with your work account</p>
+        </div>
 
-        {error && <div className="login-error">{error}</div>}
+        <form onSubmit={handleSubmit} className="space-y-4 rounded-xl border border-border bg-card p-6 shadow-sm">
+          {error && (
+            <p className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm font-medium text-destructive">
+              {error}
+            </p>
+          )}
 
-        <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label" htmlFor="email">Email Address</label>
+          <Field label="Email">
             <input
-              id="email"
-              className="form-input"
               type="email"
-              placeholder="you@company.com"
+              required
               value={email}
-              onChange={e => setEmail(e.target.value)}
-              required
-              autoFocus
+              onChange={(event) => setEmail(event.target.value)}
+              autoComplete="email"
+              className="w-full rounded border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+              placeholder="admin@company.com"
             />
-          </div>
+          </Field>
 
-          <div className="form-group">
-            <label className="form-label" htmlFor="password">Password</label>
+          <Field label="Password">
             <input
-              id="password"
-              className="form-input"
               type="password"
-              placeholder="••••••••"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
               required
+              minLength={6}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              className="w-full rounded border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary/30"
+              placeholder="password123"
             />
-          </div>
+          </Field>
 
           <button
             type="submit"
-            className="btn btn-primary btn-lg"
-            style={{ width: '100%', marginTop: '8px' }}
-            disabled={loading}
+            disabled={submitting}
+            className="w-full rounded-md bg-primary px-4 py-2 text-[12px] font-bold uppercase tracking-wider text-primary-foreground transition disabled:opacity-50"
           >
-            {loading ? 'Signing in…' : 'Sign In'}
+            {submitting ? "Signing in..." : "Sign in"}
           </button>
         </form>
 
-        <div style={{ marginTop: '24px', padding: '16px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)', fontSize: '12px', color: 'var(--text-muted)' }}>
-          <strong style={{ color: 'var(--text-secondary)' }}>Demo Accounts:</strong>
-          <div style={{ marginTop: '8px', display: 'grid', gap: '4px' }}>
-            <span>👤 Admin: <code>admin@company.com</code></span>
-            <span>👔 Manager: <code>manager@company.com</code></span>
-            <span>🧑‍💻 Employee: <code>amit@company.com</code></span>
-            <span style={{ marginTop: '4px' }}>Password: <code>password123</code></span>
-          </div>
+        <div className="mt-4 rounded-xl border border-dashed border-border p-4 text-xs text-muted-foreground">
+          <p className="font-bold uppercase tracking-wider text-foreground">Demo accounts</p>
+          <p className="mt-2 font-mono">admin@company.com</p>
+          <p className="font-mono">manager@company.com</p>
+          <p className="font-mono">amit@company.com</p>
+          <p className="mt-2">
+            Password: <code className="font-mono text-foreground">password123</code>
+          </p>
         </div>
+
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          Need access?{" "}
+          <Link href="/" className="font-bold text-foreground hover:text-primary">
+            Contact HR
+          </Link>
+        </p>
       </div>
     </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block">
+      <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+        {label}
+      </span>
+      <div className="mt-1">{children}</div>
+    </label>
   );
 }

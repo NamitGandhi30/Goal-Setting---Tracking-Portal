@@ -1,345 +1,269 @@
-'use client';
+"use client";
 
-import { useEffect, useState, useCallback } from 'react';
-import { useAuth } from '@/context/AuthContext';
-import { goals as goalsApi, cycles } from '@/lib/api';
-import type { Goal, GoalCycle, WeightageSummary, GoalCreatePayload, UnitOfMeasure } from '@/lib/types';
-
-const UOM_OPTIONS: { value: UnitOfMeasure; label: string }[] = [
-  { value: 'numeric', label: 'Numeric' },
-  { value: 'percentage', label: 'Percentage' },
-  { value: 'timeline', label: 'Timeline' },
-  { value: 'zero_based', label: 'Zero Based' },
-];
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { GoalForm } from "@/components/goals/GoalForm";
+import { GoalTable } from "@/components/goals/GoalTable";
+import { StatusPill } from "@/components/goals/StatusPill";
+import { ValidationBar } from "@/components/goals/ValidationBar";
+import { WeightageRing } from "@/components/goals/WeightageRing";
+import { useAuth } from "@/context/AuthContext";
+import { cycles, goals as goalsApi } from "@/lib/api";
+import type { Goal as UiGoal, SheetStatus, UoM } from "@/lib/goals/types";
+import type {
+  Goal as ApiGoal,
+  GoalCreatePayload,
+  GoalCycle,
+  GoalStatus,
+  GoalUpdatePayload,
+  UnitOfMeasure,
+  WeightageSummary,
+} from "@/lib/types";
 
 export default function GoalsPage() {
   const { user } = useAuth();
   const [activeCycle, setActiveCycle] = useState<GoalCycle | null>(null);
-  const [myGoals, setMyGoals] = useState<Goal[]>([]);
+  const [apiGoals, setApiGoals] = useState<ApiGoal[]>([]);
   const [summary, setSummary] = useState<WeightageSummary | null>(null);
-  const [showModal, setShowModal] = useState(false);
-  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
-  const [showSubmitConfirm, setShowSubmitConfirm] = useState(false);
-  const [error, setError] = useState('');
-  const [toast, setToast] = useState<{ msg: string; type: string } | null>(null);
-
-  const showToast = (msg: string, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  };
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
   const loadData = useCallback(async () => {
     if (!user) return;
+    setLoading(true);
+    setError("");
     try {
       const cycle = await cycles.active();
-      setActiveCycle(cycle);
-      const [g, s] = await Promise.all([
+      const [goalData, weightage] = await Promise.all([
         goalsApi.list(cycle.id),
         goalsApi.weightageSummary(cycle.id),
       ]);
-      setMyGoals(g);
-      setSummary(s);
-    } catch { /* no active cycle */ }
+      setActiveCycle(cycle);
+      setApiGoals(goalData);
+      setSummary(weightage);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not load goals");
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    const task = window.setTimeout(() => {
+      void loadData();
+    }, 0);
+    return () => {
+      window.clearTimeout(task);
+    };
+  }, [loadData]);
 
-  /* ── Form State ──────────────────────────────────────── */
-  const [form, setForm] = useState<GoalCreatePayload>({
-    thrust_area: '',
-    title: '',
-    description: '',
-    uom: 'numeric',
-    target: 0,
-    weightage: 10,
-  });
+  const uiGoals = useMemo(() => apiGoals.map(toUiGoal), [apiGoals]);
+  const totalWeight = summary?.total_weightage ?? uiGoals.reduce((sum, goal) => sum + goal.weightage, 0);
+  const remaining = Math.max(0, 100 - totalWeight);
+  const status = sheetStatus(apiGoals);
+  const editable = apiGoals.every((goal) => goal.status === "draft" || goal.status === "returned");
+  const errors = validateGoals(uiGoals, totalWeight);
+  const valid = errors.length === 0;
 
-  const resetForm = () => {
-    setForm({ thrust_area: '', title: '', description: '', uom: 'numeric', target: 0, weightage: 10 });
-    setEditingGoal(null);
-    setError('');
-  };
-
-  const openCreate = () => {
-    resetForm();
-    setShowModal(true);
-  };
-
-  const openEdit = (goal: Goal) => {
-    setEditingGoal(goal);
-    setForm({
-      thrust_area: goal.thrust_area,
-      title: goal.title,
-      description: goal.description || '',
-      uom: goal.uom,
-      target: goal.target,
-      weightage: goal.weightage,
-    });
-    setShowModal(true);
-  };
-
-  const handleSave = async () => {
+  const addGoal = async (goal: Omit<UiGoal, "id">) => {
     if (!activeCycle) return;
-    setError('');
     try {
-      if (editingGoal) {
-        await goalsApi.update(editingGoal.id, form);
-        showToast('Goal updated successfully');
-      } else {
-        await goalsApi.create(activeCycle.id, form);
-        showToast('Goal created successfully');
-      }
-      setShowModal(false);
-      resetForm();
+      await goalsApi.create(activeCycle.id, toCreatePayload(goal));
+      toast.success("Goal added");
       await loadData();
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to save');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not add goal");
     }
   };
 
-  const handleDelete = async (goalId: string) => {
-    if (!confirm('Delete this goal?')) return;
+  const updateGoal = async (id: string, patch: Partial<UiGoal>) => {
     try {
-      await goalsApi.delete(goalId);
-      showToast('Goal deleted');
+      await goalsApi.update(id, toUpdatePayload(patch));
+      toast.success("Goal updated");
       await loadData();
-    } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : 'Failed to delete', 'error');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not update goal");
     }
   };
 
-  const handleSubmitAll = async () => {
+  const removeGoal = async (id: string) => {
+    if (!confirm("Delete this goal?")) return;
+    try {
+      await goalsApi.delete(id);
+      toast.success("Goal deleted");
+      await loadData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not delete goal");
+    }
+  };
+
+  const submit = async () => {
     if (!activeCycle) return;
     try {
       await goalsApi.submit(activeCycle.id);
-      showToast('Goals submitted for approval! 🎉');
-      setShowSubmitConfirm(false);
+      toast.success("Goal sheet submitted for manager review");
       await loadData();
-    } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : 'Submit failed', 'error');
-      setShowSubmitConfirm(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not submit goals");
     }
   };
 
-  if (!user) return null;
-
-  const draftGoals = myGoals.filter(g => g.status === 'draft' || g.status === 'returned');
-  const canSubmit = summary?.total_weightage === 100 && draftGoals.length > 0;
-  const weightPct = summary ? Math.min(100, summary.total_weightage) : 0;
-  const weightClass = !summary ? 'ok' : summary.total_weightage === 100 ? 'ok' : summary.total_weightage > 100 ? 'over' : 'warn';
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-16 text-center text-sm text-muted-foreground">
+        Loading your goal sheet...
+      </div>
+    );
+  }
 
   return (
-    <div>
-      {/* Toast */}
-      {toast && (
-        <div className="toast-container">
-          <div className={`toast toast-${toast.type}`}>{toast.msg}</div>
-        </div>
-      )}
-
-      {/* Header Actions */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+    <div className="mx-auto max-w-7xl px-6 py-10 pb-32">
+      <header className="animate-in-up mb-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 700 }}>My Goals</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>
-            {activeCycle?.name || 'No active cycle'}
+          <div className="mb-3 flex items-center gap-3">
+            <StatusPill status={status} />
+            <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              {user?.name} / {user?.role}
+            </span>
+          </div>
+          <h1 className="text-balance text-4xl font-extrabold leading-[1.05] tracking-tight">
+            Performance Objectives
+          </h1>
+          <p className="mt-2 max-w-[55ch] text-pretty text-muted-foreground">
+            Define thrust areas and measurable targets for {activeCycle?.name ?? "the current cycle"}.
+            Maximum 8 goals. Weightage must total 100%.
           </p>
-        </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          {canSubmit && (
-            <button className="btn btn-success" onClick={() => setShowSubmitConfirm(true)}>
-              🚀 Submit for Approval
-            </button>
-          )}
-          {summary?.can_add_more && (
-            <button className="btn btn-primary" onClick={openCreate}>
-              + Add Goal
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Weightage Bar */}
-      <div className="glass-card" style={{ padding: '20px 24px', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-          <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-secondary)' }}>
-            Weightage Allocation
-          </span>
-          <span style={{ fontSize: '13px', fontWeight: 700, color: weightClass === 'ok' && summary?.total_weightage === 100 ? 'var(--accent-success)' : weightClass === 'over' ? 'var(--accent-danger)' : 'var(--text-primary)' }}>
-            {summary?.total_weightage ?? 0}% / 100%
-          </span>
-        </div>
-        <div className="progress-bar" style={{ height: '12px' }}>
-          <div className={`progress-fill ${weightClass}`} style={{ width: `${weightPct}%` }} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px', fontSize: '12px', color: 'var(--text-muted)' }}>
-          <span>{summary?.goal_count ?? 0} of 8 goals used</span>
-          <span>{summary?.remaining_weightage ?? 100}% remaining</span>
-        </div>
-      </div>
-
-      {/* Goals List */}
-      {myGoals.length === 0 ? (
-        <div className="glass-card empty-state">
-          <div className="empty-icon">🎯</div>
-          <h3>No goals created yet</h3>
-          <p>Click &ldquo;Add Goal&rdquo; to start building your performance objectives for this cycle.</p>
-          <button className="btn btn-primary" style={{ marginTop: '16px' }} onClick={openCreate}>
-            + Create First Goal
-          </button>
-        </div>
-      ) : (
-        <div style={{ display: 'grid', gap: '16px' }}>
-          {myGoals.map(goal => (
-            <div key={goal.id} className="glass-card" style={{ padding: '24px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                    <h3 style={{ fontSize: '16px', fontWeight: 600 }}>{goal.title}</h3>
-                    <span className={`badge badge-${goal.status === 'pending_approval' ? 'pending' : goal.status}`}>
-                      {goal.status.replace('_', ' ')}
-                    </span>
-                    {goal.is_shared && <span className="badge badge-draft">🔗 Shared</span>}
-                  </div>
-                  <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '12px' }}>
-                    {goal.thrust_area}
-                  </p>
-                  {goal.description && (
-                    <p style={{ fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                      {goal.description}
-                    </p>
-                  )}
-                  <div style={{ display: 'flex', gap: '24px', fontSize: '13px' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>
-                      <strong>UoM:</strong> {goal.uom.replace('_', ' ')}
-                    </span>
-                    <span style={{ color: 'var(--text-secondary)' }}>
-                      <strong>Target:</strong> {goal.target}
-                    </span>
-                    <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
-                      <strong>Weight:</strong> {goal.weightage}%
-                    </span>
-                  </div>
-                </div>
-                {(goal.status === 'draft' || goal.status === 'returned') && (
-                  <div style={{ display: 'flex', gap: '8px', marginLeft: '16px' }}>
-                    <button className="btn btn-ghost btn-sm" onClick={() => openEdit(goal)}>
-                      ✏️ Edit
-                    </button>
-                    <button className="btn btn-ghost btn-sm" style={{ color: 'var(--accent-danger)' }} onClick={() => handleDelete(goal.id)}>
-                      🗑️
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Create/Edit Modal */}
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal-panel" onClick={e => e.stopPropagation()}>
-            <h2 className="modal-title">{editingGoal ? 'Edit Goal' : 'Create Goal'}</h2>
-
-            {error && <div className="login-error" style={{ marginBottom: '16px' }}>{error}</div>}
-
-            <div style={{ display: 'grid', gap: '16px' }}>
-              <div className="form-group">
-                <label className="form-label">Thrust Area</label>
-                <input
-                  className="form-input"
-                  placeholder="e.g., Delivery Excellence"
-                  value={form.thrust_area}
-                  onChange={e => setForm(f => ({ ...f, thrust_area: e.target.value }))}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Goal Title</label>
-                <input
-                  className="form-input"
-                  placeholder="e.g., Achieve 95% on-time delivery"
-                  value={form.title}
-                  onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-                />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Description (Optional)</label>
-                <textarea
-                  className="form-textarea"
-                  placeholder="Additional details about this goal..."
-                  value={form.description}
-                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                <div className="form-group">
-                  <label className="form-label">Unit of Measure</label>
-                  <select
-                    className="form-select"
-                    value={form.uom}
-                    onChange={e => setForm(f => ({ ...f, uom: e.target.value as UnitOfMeasure }))}
-                  >
-                    {UOM_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Target</label>
-                  <input
-                    className="form-input"
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={form.target}
-                    onChange={e => setForm(f => ({ ...f, target: parseFloat(e.target.value) || 0 }))}
-                  />
-                </div>
-              </div>
-              <div className="form-group">
-                <label className="form-label">
-                  Weightage (%) — Min 10%, Remaining: {summary?.remaining_weightage ?? 100}%
-                </label>
-                <input
-                  className="form-input"
-                  type="number"
-                  min={10}
-                  max={100}
-                  step={5}
-                  value={form.weightage}
-                  onChange={e => setForm(f => ({ ...f, weightage: parseFloat(e.target.value) || 0 }))}
-                />
-              </div>
-            </div>
-
-            <div className="modal-actions">
-              <button className="btn btn-ghost" onClick={() => { setShowModal(false); resetForm(); }}>
-                Cancel
-              </button>
-              <button className="btn btn-primary" onClick={handleSave}>
-                {editingGoal ? 'Save Changes' : 'Create Goal'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Submit Confirmation Modal */}
-      {showSubmitConfirm && (
-        <div className="modal-overlay" onClick={() => setShowSubmitConfirm(false)}>
-          <div className="modal-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: '440px' }}>
-            <h2 className="modal-title">Submit Goals for Approval?</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '14px', lineHeight: 1.6 }}>
-              This will send all <strong>{draftGoals.length} draft goals</strong> to your manager for review.
-              You won&apos;t be able to edit them until they&apos;re returned.
+          {error && (
+            <p className="mt-4 max-w-xl rounded-md border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+              {error}
             </p>
-            <div className="modal-actions">
-              <button className="btn btn-ghost" onClick={() => setShowSubmitConfirm(false)}>Cancel</button>
-              <button className="btn btn-success" onClick={handleSubmitAll}>🚀 Confirm Submit</button>
-            </div>
-          </div>
+          )}
         </div>
+
+        <div className="flex items-center gap-6 rounded-xl border border-border bg-card p-4 shadow-sm">
+          <div className="flex flex-col">
+            <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Total Weightage
+            </span>
+            <span className="font-mono text-3xl font-bold">
+              {totalWeight}
+              <span className="text-primary">%</span>
+            </span>
+          </div>
+          <WeightageRing value={totalWeight} />
+        </div>
+      </header>
+
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-12">
+        <section className="animate-in-up space-y-6 lg:col-span-4" style={{ animationDelay: "100ms" }}>
+          <GoalForm
+            remaining={remaining}
+            goalCount={uiGoals.length}
+            disabled={!editable || !(summary?.can_add_more ?? uiGoals.length < 8)}
+            onAdd={addGoal}
+          />
+          <div className="flex items-start gap-4 rounded-xl border border-dashed border-border p-4">
+            <div className="text-2xl">!</div>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              <strong className="block text-foreground">Why not?</strong>
+              Align personal goals with efficiency, quality, and sustainability outcomes for
+              maximum cross-team impact.
+            </p>
+          </div>
+        </section>
+
+        <section className="animate-in-up lg:col-span-8" style={{ animationDelay: "200ms" }}>
+          <GoalTable
+            goals={uiGoals}
+            editable={editable}
+            onUpdate={updateGoal}
+            onRemove={removeGoal}
+          />
+        </section>
+      </div>
+
+      {editable && (
+        <ValidationBar
+          goalCount={uiGoals.length}
+          totalWeight={totalWeight}
+          valid={valid}
+          errors={errors}
+          ctaLabel="Submit Goal Sheet"
+          onSubmit={submit}
+        />
       )}
     </div>
   );
+}
+
+function toUiGoal(goal: ApiGoal): UiGoal {
+  return {
+    id: goal.id,
+    thrustArea: goal.thrust_area,
+    title: goal.title,
+    description: goal.description ?? "",
+    uom: toUiUom(goal.uom),
+    target: String(goal.target),
+    weightage: goal.weightage,
+    status: toSheetStatus(goal.status),
+  };
+}
+
+function toCreatePayload(goal: Omit<UiGoal, "id">): GoalCreatePayload {
+  return {
+    thrust_area: goal.thrustArea,
+    title: goal.title,
+    description: goal.description,
+    uom: toApiUom(goal.uom),
+    target: Number(goal.target) || 0,
+    weightage: goal.weightage,
+  };
+}
+
+function toUpdatePayload(goal: Partial<UiGoal>): GoalUpdatePayload {
+  const payload: GoalUpdatePayload = {};
+  if (goal.thrustArea !== undefined) payload.thrust_area = goal.thrustArea;
+  if (goal.title !== undefined) payload.title = goal.title;
+  if (goal.description !== undefined) payload.description = goal.description;
+  if (goal.uom !== undefined) payload.uom = toApiUom(goal.uom);
+  if (goal.target !== undefined) payload.target = Number(goal.target) || 0;
+  if (goal.weightage !== undefined) payload.weightage = goal.weightage;
+  return payload;
+}
+
+function toUiUom(uom: UnitOfMeasure): UoM {
+  if (uom === "percentage") return "Percent";
+  if (uom === "timeline") return "Timeline";
+  if (uom === "zero_based") return "Zero-based";
+  return "Numeric";
+}
+
+function toApiUom(uom: UoM): UnitOfMeasure {
+  if (uom === "Percent") return "percentage";
+  if (uom === "Timeline") return "timeline";
+  if (uom === "Zero-based") return "zero_based";
+  return "numeric";
+}
+
+function toSheetStatus(status: GoalStatus): SheetStatus {
+  if (status === "pending_approval") return "Submitted";
+  if (status === "approved") return "Approved";
+  if (status === "returned") return "Returned";
+  return "Draft";
+}
+
+function sheetStatus(goals: ApiGoal[]): SheetStatus {
+  if (goals.length === 0) return "Draft";
+  if (goals.every((goal) => goal.status === "approved")) return "Approved";
+  if (goals.some((goal) => goal.status === "returned")) return "Returned";
+  if (goals.some((goal) => goal.status === "pending_approval")) return "Submitted";
+  return "Draft";
+}
+
+function validateGoals(goals: UiGoal[], totalWeight: number) {
+  const errors: string[] = [];
+  if (goals.length === 0) errors.push("Add at least one goal.");
+  if (goals.length > 8) errors.push("Maximum 8 goals allowed.");
+  if (totalWeight !== 100) errors.push("Total weightage must equal 100%.");
+  return errors;
 }

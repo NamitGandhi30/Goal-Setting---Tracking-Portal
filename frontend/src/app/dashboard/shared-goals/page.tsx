@@ -1,186 +1,184 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useAuth } from '@/context/AuthContext';
-import { sharedGoals as sharedApi, users as usersApi, cycles } from '@/lib/api';
-import type { User, GoalCycle, SharedGoalCreatePayload, UnitOfMeasure } from '@/lib/types';
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
+import { cycles, sharedGoals as sharedApi, users as usersApi } from "@/lib/api";
+import { useAuth } from "@/context/AuthContext";
+import type { GoalCycle, SharedGoalCreatePayload, UnitOfMeasure, User } from "@/lib/types";
 
 const UOM_OPTIONS: { value: UnitOfMeasure; label: string }[] = [
-  { value: 'numeric', label: 'Numeric' },
-  { value: 'percentage', label: 'Percentage' },
-  { value: 'timeline', label: 'Timeline' },
-  { value: 'zero_based', label: 'Zero Based' },
+  { value: "numeric", label: "Numeric" },
+  { value: "percentage", label: "Percentage" },
+  { value: "timeline", label: "Timeline" },
+  { value: "zero_based", label: "Zero Based" },
 ];
 
 export default function SharedGoalsPage() {
   const { user } = useAuth();
   const [reports, setReports] = useState<User[]>([]);
   const [activeCycle, setActiveCycle] = useState<GoalCycle | null>(null);
-  const [showModal, setShowModal] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
-  const [toast, setToast] = useState<{ msg: string; type: string } | null>(null);
-  const [error, setError] = useState('');
-
-  const [form, setForm] = useState<Omit<SharedGoalCreatePayload, 'assigned_to_user_ids'>>({
-    thrust_area: '',
-    title: '',
-    description: '',
-    uom: 'numeric',
+  const [error, setError] = useState("");
+  const [form, setForm] = useState<Omit<SharedGoalCreatePayload, "assigned_to_user_ids">>({
+    thrust_area: "",
+    title: "",
+    description: "",
+    uom: "numeric",
     target: 0,
     weightage: 10,
   });
 
-  const showToast = (msg: string, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  };
-
-  useEffect(() => {
+  const loadData = useCallback(async () => {
     if (!user) return;
-    cycles.active().then(setActiveCycle).catch(() => {});
-    if (user.role === 'admin') {
-      usersApi.list().then(all => setReports(all.filter(u => u.role === 'employee'))).catch(() => {});
-    } else {
-      usersApi.reports(user.id).then(setReports).catch(() => {});
+    try {
+      const [cycle, people] = await Promise.all([
+        cycles.active().catch(() => null),
+        user.role === "admin"
+          ? usersApi.list().then((all) => all.filter((person) => person.role === "employee"))
+          : usersApi.reports(user.id),
+      ]);
+      setActiveCycle(cycle);
+      setReports(people);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not load employees");
     }
   }, [user]);
 
+  useEffect(() => {
+    const task = window.setTimeout(() => void loadData(), 0);
+    return () => window.clearTimeout(task);
+  }, [loadData]);
+
   const handleCreate = async () => {
     if (selectedUsers.length === 0) {
-      setError('Select at least one employee');
+      setError("Select at least one employee");
       return;
     }
-    setError('');
+    setError("");
     try {
-      await sharedApi.create(
-        { ...form, assigned_to_user_ids: selectedUsers },
-        activeCycle?.id
-      );
-      showToast(`Shared goal pushed to ${selectedUsers.length} employees`);
-      setShowModal(false);
+      await sharedApi.create({ ...form, assigned_to_user_ids: selectedUsers }, activeCycle?.id);
+      toast.success(`Shared goal pushed to ${selectedUsers.length} employees`);
       setSelectedUsers([]);
-      setForm({ thrust_area: '', title: '', description: '', uom: 'numeric', target: 0, weightage: 10 });
-    } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create shared goal');
+      setForm({ thrust_area: "", title: "", description: "", uom: "numeric", target: 0, weightage: 10 });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create shared goal");
     }
   };
 
   const toggleUser = (id: string) => {
-    setSelectedUsers(prev =>
-      prev.includes(id) ? prev.filter(u => u !== id) : [...prev, id]
+    setSelectedUsers((current) =>
+      current.includes(id) ? current.filter((userId) => userId !== id) : [...current, id],
     );
   };
 
-  if (!user) return null;
-
   return (
-    <div>
-      {toast && (
-        <div className="toast-container">
-          <div className={`toast toast-${toast.type}`}>{toast.msg}</div>
-        </div>
-      )}
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+    <div className="mx-auto max-w-7xl px-6 py-10">
+      <header className="animate-in-up mb-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 style={{ fontSize: '24px', fontWeight: 700 }}>Shared Goals (KPIs)</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>
-            Push departmental KPIs to multiple employees at once
+          <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            Manager / Admin
+          </span>
+          <h1 className="mt-2 text-4xl font-extrabold tracking-tight">Shared Goals</h1>
+          <p className="mt-2 max-w-[55ch] text-muted-foreground">
+            Push departmental KPIs to multiple employees. Each employee receives an editable copy
+            in the current cycle.
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>
-          + Create Shared Goal
-        </button>
-      </div>
-
-      <div className="glass-card" style={{ padding: '32px' }}>
-        <div className="empty-state">
-          <div className="empty-icon">🔗</div>
-          <h3>Push KPIs to your team</h3>
-          <p>
-            Create a shared goal and assign it to multiple employees.
-            Each employee will receive a copy in their goals list.
-          </p>
-          <button className="btn btn-primary" style={{ marginTop: '16px' }} onClick={() => setShowModal(true)}>
-            + Create Shared Goal
-          </button>
+        <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+          <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            Active cycle
+          </span>
+          <p className="mt-1 text-sm font-bold">{activeCycle?.name ?? "No active cycle"}</p>
         </div>
-      </div>
+      </header>
 
-      {/* Create Modal */}
-      {showModal && (
-        <div className="modal-overlay" onClick={() => setShowModal(false)}>
-          <div className="modal-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: '600px' }}>
-            <h2 className="modal-title">Create Shared Goal</h2>
-            {error && <div className="login-error" style={{ marginBottom: '16px' }}>{error}</div>}
-
-            <div style={{ display: 'grid', gap: '16px' }}>
-              <div className="form-group">
-                <label className="form-label">Thrust Area</label>
-                <input className="form-input" placeholder="e.g., Department KPI" value={form.thrust_area}
-                  onChange={e => setForm(f => ({ ...f, thrust_area: e.target.value }))} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Goal Title</label>
-                <input className="form-input" placeholder="e.g., Achieve 99.9% uptime" value={form.title}
-                  onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Description (Optional)</label>
-                <textarea className="form-textarea" value={form.description}
-                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px' }}>
-                <div className="form-group">
-                  <label className="form-label">UoM</label>
-                  <select className="form-select" value={form.uom}
-                    onChange={e => setForm(f => ({ ...f, uom: e.target.value as UnitOfMeasure }))}>
-                    {UOM_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Target</label>
-                  <input className="form-input" type="number" value={form.target}
-                    onChange={e => setForm(f => ({ ...f, target: parseFloat(e.target.value) || 0 }))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Weightage (%)</label>
-                  <input className="form-input" type="number" min={10} max={100} value={form.weightage}
-                    onChange={e => setForm(f => ({ ...f, weightage: parseFloat(e.target.value) || 0 }))} />
-                </div>
-              </div>
-
-              {/* Employee Selection */}
-              <div className="form-group">
-                <label className="form-label">Assign To ({selectedUsers.length} selected)</label>
-                <div style={{ maxHeight: '200px', overflowY: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)', padding: '8px' }}>
-                  {reports.map(emp => (
-                    <label key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', cursor: 'pointer', borderRadius: 'var(--radius-sm)', transition: 'background 0.15s', background: selectedUsers.includes(emp.id) ? 'rgba(99, 102, 241, 0.1)' : 'transparent' }}>
-                      <input type="checkbox" checked={selectedUsers.includes(emp.id)}
-                        onChange={() => toggleUser(emp.id)}
-                        style={{ accentColor: 'var(--accent-primary)' }} />
-                      <span style={{ fontSize: '14px' }}>{emp.name}</span>
-                      <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginLeft: 'auto' }}>{emp.employee_id}</span>
-                    </label>
-                  ))}
-                  {reports.length === 0 && (
-                    <p style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>
-                      No employees found
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="modal-actions">
-              <button className="btn btn-ghost" onClick={() => setShowModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleCreate}>
-                Push to {selectedUsers.length} Employee{selectedUsers.length !== 1 ? 's' : ''}
-              </button>
-            </div>
+      <div className="grid gap-8 lg:grid-cols-12">
+        <section className="space-y-5 rounded-xl border border-border bg-card p-6 shadow-sm lg:col-span-5">
+          <h2 className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            <span className="size-1.5 rounded-full bg-primary" />
+            Create shared KPI
+          </h2>
+          {error && <p className="rounded border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">{error}</p>}
+          <Field label="Thrust area">
+            <input className="field" placeholder="Department KPI" value={form.thrust_area} onChange={(event) => setForm((current) => ({ ...current, thrust_area: event.target.value }))} />
+          </Field>
+          <Field label="Goal title">
+            <input className="field" placeholder="Achieve 99.9% uptime" value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} />
+          </Field>
+          <Field label="Description">
+            <textarea className="field min-h-20 resize-none" value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} />
+          </Field>
+          <div className="grid gap-4 md:grid-cols-3">
+            <Field label="UoM">
+              <select className="field" value={form.uom} onChange={(event) => setForm((current) => ({ ...current, uom: event.target.value as UnitOfMeasure }))}>
+                {UOM_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Target">
+              <input className="field" type="number" value={form.target} onChange={(event) => setForm((current) => ({ ...current, target: Number(event.target.value) || 0 }))} />
+            </Field>
+            <Field label="Weight">
+              <input className="field" type="number" min={10} max={100} value={form.weightage} onChange={(event) => setForm((current) => ({ ...current, weightage: Number(event.target.value) || 0 }))} />
+            </Field>
           </div>
-        </div>
-      )}
+          <button
+            type="button"
+            onClick={handleCreate}
+            className="w-full rounded-md bg-foreground py-3 text-xs font-bold uppercase tracking-widest text-background transition-colors hover:bg-primary disabled:opacity-40"
+          >
+            Push to {selectedUsers.length} employee{selectedUsers.length === 1 ? "" : "s"}
+          </button>
+        </section>
+
+        <section className="lg:col-span-7">
+          <div className="mb-4 flex items-center gap-3">
+            <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+              Assign to
+            </h2>
+            <span className="rounded-full bg-secondary px-2.5 py-0.5 text-[10px] font-bold text-muted-foreground ring-1 ring-border">
+              {selectedUsers.length} / {reports.length}
+            </span>
+          </div>
+          <div className="grid gap-3 md:grid-cols-2">
+            {reports.map((person) => {
+              const selected = selectedUsers.includes(person.id);
+              return (
+                <button
+                  key={person.id}
+                  type="button"
+                  onClick={() => toggleUser(person.id)}
+                  className={`rounded-xl border p-4 text-left shadow-sm transition-all ${
+                    selected
+                      ? "border-primary bg-primary/5 ring-1 ring-primary/20"
+                      : "border-border bg-card hover:-translate-y-0.5 hover:border-foreground/20"
+                  }`}
+                >
+                  <p className="text-sm font-bold">{person.name}</p>
+                  <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    {person.employee_id} / {person.department ?? "No department"}
+                  </p>
+                </button>
+              );
+            })}
+            {reports.length === 0 && (
+              <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground md:col-span-2">
+                No employees found.
+              </p>
+            )}
+          </div>
+        </section>
+      </div>
     </div>
+  );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="font-mono text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{label}</span>
+      <div className="mt-1 [&_.field]:w-full [&_.field]:rounded [&_.field]:border [&_.field]:border-border [&_.field]:bg-background [&_.field]:px-3 [&_.field]:py-2 [&_.field]:text-sm [&_.field]:outline-none [&_.field]:focus:ring-2 [&_.field]:focus:ring-primary/30">
+        {children}
+      </div>
+    </label>
   );
 }

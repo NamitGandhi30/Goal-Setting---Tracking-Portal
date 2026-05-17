@@ -5,6 +5,7 @@ import uuid
 from datetime import date, datetime, timezone
 
 from sqlalchemy import select, text
+from sqlalchemy.exc import OperationalError
 from app.db.session import engine, async_session_factory
 from app.db.base import Base
 import app.models  # noqa: F401 – registers all models with the mapper
@@ -25,7 +26,26 @@ CYCLE_ID = uuid.UUID("00000000-0000-0000-0000-000000000010")
 DEFAULT_PASSWORD = "password123"
 
 
+async def wait_for_database(retries: int = 10, delay: float = 1.0) -> None:
+    """Wait briefly for Postgres to accept connections during local startup."""
+    last_error: Exception | None = None
+    for attempt in range(1, retries + 1):
+        try:
+            async with engine.begin() as conn:
+                await conn.execute(text("SELECT 1"))
+            return
+        except (ConnectionError, OSError, OperationalError) as exc:
+            last_error = exc
+            if attempt == retries:
+                break
+            await asyncio.sleep(delay)
+    if last_error:
+        raise last_error
+
+
 async def seed():
+    await wait_for_database()
+
     # Create all tables
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

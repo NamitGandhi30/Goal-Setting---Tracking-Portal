@@ -1,171 +1,197 @@
-'use client';
+"use client";
 
-import { useEffect, useState, useCallback } from 'react';
-import { useAuth } from '@/context/AuthContext';
-import { approvals as approvalsApi } from '@/lib/api';
-import type { GoalWithOwner } from '@/lib/types';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
+import { ReturnDialog } from "@/components/goals/ReturnDialog";
+import { StatusPill } from "@/components/goals/StatusPill";
+import { useAuth } from "@/context/AuthContext";
+import { approvals as approvalsApi } from "@/lib/api";
+import type { GoalWithOwner } from "@/lib/types";
 
 export default function ApprovalsPage() {
   const { user } = useAuth();
   const [pending, setPending] = useState<GoalWithOwner[]>([]);
-  const [selectedGoal, setSelectedGoal] = useState<GoalWithOwner | null>(null);
-  const [comments, setComments] = useState('');
-  const [actionType, setActionType] = useState<'approve' | 'return' | null>(null);
-  const [toast, setToast] = useState<{ msg: string; type: string } | null>(null);
-
-  const showToast = (msg: string, type = 'success') => {
-    setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
-  };
+  const [loading, setLoading] = useState(true);
 
   const loadPending = useCallback(async () => {
+    setLoading(true);
     try {
-      const data = await approvalsApi.pending();
-      setPending(data);
-    } catch { /* */ }
+      setPending(await approvalsApi.pending());
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not load approval queue");
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { loadPending(); }, [loadPending]);
+  useEffect(() => {
+    const task = window.setTimeout(() => {
+      void loadPending();
+    }, 0);
+    return () => {
+      window.clearTimeout(task);
+    };
+  }, [loadPending]);
 
-  const handleAction = async () => {
-    if (!selectedGoal || !actionType) return;
+  const groups = useMemo(() => {
+    return Object.entries(
+      pending.reduce<Record<string, GoalWithOwner[]>>((acc, goal) => {
+        const key = goal.owner_name || goal.user_id;
+        acc[key] = [...(acc[key] ?? []), goal];
+        return acc;
+      }, {}),
+    );
+  }, [pending]);
+
+  const approve = async (goal: GoalWithOwner) => {
     try {
-      if (actionType === 'approve') {
-        await approvalsApi.approve(selectedGoal.id, comments || undefined);
-        showToast(`Goal approved: ${selectedGoal.title}`);
-      } else {
-        await approvalsApi.returnGoal(selectedGoal.id, comments || undefined);
-        showToast(`Goal returned: ${selectedGoal.title}`, 'info');
-      }
-      setSelectedGoal(null);
-      setComments('');
-      setActionType(null);
+      await approvalsApi.approve(goal.id);
+      toast.success(`Approved: ${goal.title}`);
       await loadPending();
-    } catch (err: unknown) {
-      showToast(err instanceof Error ? err.message : 'Action failed', 'error');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not approve goal");
+    }
+  };
+
+  const returnGoal = async (goal: GoalWithOwner, comment: string) => {
+    try {
+      await approvalsApi.returnGoal(goal.id, comment);
+      toast.info(`Returned: ${goal.title}`);
+      await loadPending();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not return goal");
     }
   };
 
   if (!user) return null;
 
-  // Group by employee
-  const grouped = pending.reduce<Record<string, GoalWithOwner[]>>((acc, goal) => {
-    const key = goal.owner_name || goal.user_id;
-    if (!acc[key]) acc[key] = [];
-    acc[key].push(goal);
-    return acc;
-  }, {});
-
   return (
-    <div>
-      {toast && (
-        <div className="toast-container">
-          <div className={`toast toast-${toast.type}`}>{toast.msg}</div>
-        </div>
-      )}
-
-      <div style={{ marginBottom: '24px' }}>
-        <h1 style={{ fontSize: '24px', fontWeight: 700 }}>Team Goal Reviews</h1>
-        <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginTop: '4px' }}>
-          {pending.length} goals pending your review
+    <div className="mx-auto max-w-7xl px-6 py-10">
+      <header className="animate-in-up mb-10">
+        <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+          Manager view
+        </span>
+        <h1 className="mt-2 text-4xl font-extrabold tracking-tight">Approval Queue</h1>
+        <p className="mt-2 max-w-[55ch] text-muted-foreground">
+          Review submitted goals, then approve or return them with context for rework.
         </p>
+      </header>
+
+      <section className="mb-10">
+        <div className="mb-4 flex items-center gap-3">
+          <h2 className="text-xs font-bold uppercase tracking-widest text-muted-foreground">
+            Pending action
+          </h2>
+          <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-[10px] font-bold text-primary ring-1 ring-primary/20">
+            {pending.length}
+          </span>
+        </div>
+
+        {loading ? (
+          <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+            Loading approvals...
+          </p>
+        ) : groups.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+            No goals awaiting approval.
+          </p>
+        ) : (
+          <div className="space-y-8">
+            {groups.map(([employeeName, goals]) => (
+              <div key={employeeName}>
+                <div className="mb-3 flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-bold">{employeeName}</p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {goals[0]?.owner_employee_id ?? "Employee"} / {goals.length} goals /{" "}
+                      {goals.reduce((sum, goal) => sum + goal.weightage, 0)}% weight
+                    </p>
+                  </div>
+                  <StatusPill status="Submitted" />
+                </div>
+
+                <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                  {goals.map((goal) => (
+                    <GoalReviewCard
+                      key={goal.id}
+                      goal={goal}
+                      onApprove={() => approve(goal)}
+                      onReturn={(comment) => returnGoal(goal, comment)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function GoalReviewCard({
+  goal,
+  onApprove,
+  onReturn,
+}: {
+  goal: GoalWithOwner;
+  onApprove: () => void;
+  onReturn: (comment: string) => void;
+}) {
+  return (
+    <div className="group rounded-xl border border-border bg-card p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:border-foreground/20 hover:shadow-md">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-bold">{goal.title}</p>
+          <p className="mt-1 text-[11px] text-muted-foreground">{goal.thrust_area}</p>
+          {goal.description && (
+            <p className="mt-3 line-clamp-2 text-xs text-muted-foreground">{goal.description}</p>
+          )}
+        </div>
+        <span className="rounded-sm bg-secondary px-2 py-0.5 text-[10px] font-bold uppercase text-foreground/70">
+          {goal.weightage}%
+        </span>
       </div>
 
-      {pending.length === 0 ? (
-        <div className="glass-card empty-state">
-          <div className="empty-icon">✅</div>
-          <h3>All caught up!</h3>
-          <p>No goals are waiting for your review.</p>
+      <div className="mt-4 flex items-end justify-between border-t border-border pt-4">
+        <div className="flex gap-6">
+          <Stat label="Target" value={String(goal.target)} />
+          <Stat label="UoM" value={goal.uom.replace("_", " ")} />
         </div>
-      ) : (
-        Object.entries(grouped).map(([name, empGoals]) => (
-          <div key={name} style={{ marginBottom: '28px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-              <div className="user-avatar" style={{ width: '32px', height: '32px', fontSize: '12px' }}>
-                {name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-              </div>
-              <div>
-                <h3 style={{ fontSize: '15px', fontWeight: 600 }}>{name}</h3>
-                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                  {empGoals[0]?.owner_employee_id} · {empGoals.length} goals ·
-                  Total weight: {empGoals.reduce((s, g) => s + g.weightage, 0)}%
-                </span>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gap: '12px' }}>
-              {empGoals.map(goal => (
-                <div key={goal.id} className="glass-card" style={{ padding: '20px 24px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                    <div style={{ flex: 1 }}>
-                      <h4 style={{ fontSize: '15px', fontWeight: 600, marginBottom: '6px' }}>{goal.title}</h4>
-                      <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginBottom: '10px' }}>
-                        {goal.thrust_area}
-                      </p>
-                      <div style={{ display: 'flex', gap: '20px', fontSize: '13px' }}>
-                        <span style={{ color: 'var(--text-secondary)' }}>UoM: {goal.uom.replace('_', ' ')}</span>
-                        <span style={{ color: 'var(--text-secondary)' }}>Target: {goal.target}</span>
-                        <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>Weight: {goal.weightage}%</span>
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px', marginLeft: '16px' }}>
-                      <button
-                        className="btn btn-success btn-sm"
-                        onClick={() => { setSelectedGoal(goal); setActionType('approve'); }}
-                      >
-                        ✓ Approve
-                      </button>
-                      <button
-                        className="btn btn-warning btn-sm"
-                        onClick={() => { setSelectedGoal(goal); setActionType('return'); }}
-                      >
-                        ↩ Return
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))
-      )}
-
-      {/* Action Modal */}
-      {selectedGoal && actionType && (
-        <div className="modal-overlay" onClick={() => { setSelectedGoal(null); setActionType(null); }}>
-          <div className="modal-panel" onClick={e => e.stopPropagation()} style={{ maxWidth: '480px' }}>
-            <h2 className="modal-title">
-              {actionType === 'approve' ? '✅ Approve Goal' : '↩ Return Goal'}
-            </h2>
-            <div style={{ marginBottom: '16px', padding: '16px', background: 'var(--bg-secondary)', borderRadius: 'var(--radius-sm)' }}>
-              <h4 style={{ fontSize: '14px', fontWeight: 600, marginBottom: '4px' }}>{selectedGoal.title}</h4>
-              <p style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
-                {selectedGoal.thrust_area} · {selectedGoal.weightage}%
-              </p>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Comments {actionType === 'return' ? '(Recommended)' : '(Optional)'}</label>
-              <textarea
-                className="form-textarea"
-                placeholder={actionType === 'return' ? 'Explain what needs to be revised...' : 'Any feedback...'}
-                value={comments}
-                onChange={e => setComments(e.target.value)}
-              />
-            </div>
-            <div className="modal-actions">
-              <button className="btn btn-ghost" onClick={() => { setSelectedGoal(null); setActionType(null); setComments(''); }}>
-                Cancel
-              </button>
+        <div className="flex gap-2">
+          <ReturnDialog
+            title="Return goal"
+            description={`Add a comment for ${goal.owner_name ?? "the employee"}.`}
+            onConfirm={onReturn}
+            trigger={
               <button
-                className={`btn ${actionType === 'approve' ? 'btn-success' : 'btn-warning'}`}
-                onClick={handleAction}
+                type="button"
+                className="rounded border border-border px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider hover:bg-secondary"
               >
-                {actionType === 'approve' ? 'Confirm Approve' : 'Confirm Return'}
+                Return
               </button>
-            </div>
-          </div>
+            }
+          />
+          <button
+            type="button"
+            onClick={onApprove}
+            className="rounded bg-foreground px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-background hover:bg-primary"
+          >
+            Approve
+          </button>
         </div>
-      )}
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex flex-col">
+      <span className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
+        {label}
+      </span>
+      <span className="font-mono text-sm font-bold capitalize">{value}</span>
     </div>
   );
 }
