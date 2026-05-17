@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { href: "/dashboard/tracking", label: "Track", roles: ["employee", "manager", "admin"] },
   { href: "/dashboard/approvals", label: "Approvals", roles: ["manager", "admin"] },
   { href: "/dashboard/shared-goals", label: "Shared Goals", roles: ["manager", "admin"] },
+  { href: "/dashboard/analytics", label: "Analytics", roles: ["manager", "admin"] },
   { href: "/dashboard/cycles", label: "Cycles", roles: ["admin"] },
   { href: "/dashboard/users", label: "Admin Console", roles: ["admin"] },
 ];

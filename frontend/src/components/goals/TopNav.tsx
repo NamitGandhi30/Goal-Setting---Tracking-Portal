@@ -22,9 +22,11 @@ export function TopNav() {
 
   const navLinks: { label: string; to: string; visible: boolean }[] = [
     { label: "My Goals", to: "/dashboard/goals", visible: true },
+    { label: "Tracking", to: "/dashboard/tracking", visible: true },
     { label: "Approvals", to: "/dashboard/approvals", visible: role === "Manager" || role === "Admin" },
-    { label: "Analytics", to: "/dashboard", visible: role === "Manager" || role === "Admin" },
+    { label: "Analytics", to: "/dashboard/analytics", visible: role === "Manager" || role === "Admin" },
     { label: "Admin Console", to: "/dashboard/users", visible: role === "Admin" },
+    { label: "Cycles", to: "/dashboard/cycles", visible: role === "Admin" },
   ];
 
   const handleSignOut = async () => {

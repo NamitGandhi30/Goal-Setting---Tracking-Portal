@@ -39,11 +39,60 @@ class GoalCheckInOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class GoalCheckInAuditOut(BaseModel):
+    id: uuid.UUID
+    checkin_id: uuid.UUID
+    changed_by: uuid.UUID
+    action: str
+    previous_actual_value: float | None
+    new_actual_value: float | None
+    previous_progress_score: float | None
+    new_progress_score: float | None
+    previous_progress_status: ProgressStatus | None
+    new_progress_status: ProgressStatus | None
+    previous_employee_comment: str | None
+    new_employee_comment: str | None
+    previous_manager_comment: str | None
+    new_manager_comment: str | None
+    previous_self_rating: float | None
+    new_self_rating: float | None
+    previous_manager_rating: float | None
+    new_manager_rating: float | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class TeamGoalCheckInOut(GoalCheckInOut):
     goal_title: str
     owner_name: str
     owner_employee_id: str
     thrust_area: str
+
+
+class TeamTrackingGoalOut(BaseModel):
+    goal_id: uuid.UUID
+    cycle_id: uuid.UUID
+    goal_title: str
+    owner_id: uuid.UUID
+    owner_name: str
+    owner_employee_id: str
+    owner_department: str | None
+    thrust_area: str
+    target: float
+    weightage: float
+    cadence: str
+    deadline: date | None
+    phase: CheckInPhase
+    checkin_id: uuid.UUID | None = None
+    actual_value: float | None = None
+    progress_score: float
+    progress_status: ProgressStatus
+    employee_comment: str | None = None
+    manager_comment: str | None = None
+    self_rating: float | None = None
+    manager_rating: float | None = None
+    updated_at: datetime | None = None
 
 
 class TrackingWindowCreate(BaseModel):

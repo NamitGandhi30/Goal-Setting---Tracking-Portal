@@ -25,6 +25,30 @@ class Settings(BaseSettings):
     # ── Dev Utilities ───────────────────────────────────
     AUTO_SEED: bool = False
 
+    # ── Assistant ───────────────────────────────────────
+    ASSISTANT_PROVIDER: str = "deterministic"
+    OPENAI_API_KEY: str | None = None
+    OPENAI_MODEL: str = "gpt-5.4-mini"
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+
+    # Phase 3 notifications
+    APP_FRONTEND_URL: str = "http://localhost:3000"
+    SMTP_HOST: str | None = None
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str | None = None
+    SMTP_PASSWORD: str | None = None
+    SMTP_FROM_EMAIL: str | None = None
+    SMTP_USE_TLS: bool = True
+    TEAMS_WEBHOOK_URL: str | None = None
+
+    # Microsoft Entra ID integration
+    ENTRA_ENABLED: bool = False
+    ENTRA_TENANT_ID: str | None = None
+    ENTRA_CLIENT_ID: str | None = None
+    ENTRA_JWKS_URL: str | None = None
+    ENTRA_ADMIN_GROUP_ID: str | None = None
+    ENTRA_MANAGER_GROUP_ID: str | None = None
+
     @field_validator("DEBUG", mode="before")
     @classmethod
     def parse_debug(cls, value: object) -> object:

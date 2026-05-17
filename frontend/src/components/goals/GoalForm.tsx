@@ -4,7 +4,7 @@ import { THRUST_AREAS, type Goal, type GoalCadence, type UoM } from "@/lib/goals
 interface Props {
   remaining: number;
   goalCount: number;
-  onAdd: (goal: Omit<Goal, "id">) => void;
+  onAdd: (goal: Omit<Goal, "id">) => void | Promise<void>;
   disabled?: boolean;
 }
 
@@ -33,6 +33,7 @@ export function GoalForm({ remaining, goalCount, onAdd, disabled }: Props) {
   const [cadence, setCadence] = useState<GoalCadence>("Annual");
   const [weightage, setWeightage] = useState<number>(Math.max(10, Math.min(remaining, 20)));
   const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const reset = () => {
     setTitle("");
@@ -44,25 +45,31 @@ export function GoalForm({ remaining, goalCount, onAdd, disabled }: Props) {
     setErr(null);
   };
 
-  const submit = () => {
-    if (disabled) return;
+  const submit = async () => {
+    if (disabled || saving) return;
     const finalThrustArea = thrustArea === CUSTOM_THRUST ? customThrustArea.trim() : thrustArea;
     if (!finalThrustArea) return setErr("Thrust area is required");
     if (!title.trim()) return setErr("Title is required");
     if (uom === "Zero-based" ? false : !target.trim()) return setErr("Target is required");
     if (weightage < 10) return setErr("Minimum weightage is 10%");
+    if (weightage > remaining) return setErr(`Only ${remaining}% weightage is available`);
     if (goalCount >= 8) return setErr("Maximum 8 goals reached");
-    onAdd({
-      thrustArea: finalThrustArea,
-      title: title.trim(),
-      description: description.trim(),
-      uom,
-      target: uom === "Zero-based" || uom === "Yes/No" ? "1" : target.trim(),
-      deadline: deadline || undefined,
-      cadence,
-      weightage: Number(weightage),
-    });
-    reset();
+    setSaving(true);
+    try {
+      await onAdd({
+        thrustArea: finalThrustArea,
+        title: title.trim(),
+        description: description.trim(),
+        uom,
+        target: uom === "Zero-based" || uom === "Yes/No" ? "1" : target.trim(),
+        deadline: deadline || undefined,
+        cadence,
+        weightage: Number(weightage),
+      });
+      reset();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -71,6 +78,13 @@ export function GoalForm({ remaining, goalCount, onAdd, disabled }: Props) {
         <span className="size-1.5 rounded-full bg-primary" />
         Add New Objective
       </h2>
+
+      {disabled && goalCount > 0 && (
+        <div className="mb-5 rounded border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+          <p className="font-bold">Maximum limit reached</p>
+          <p className="mt-1 opacity-90">You have allocated 100% of your weightage or reached the 8 goal limit. Edit existing goals to free up capacity.</p>
+        </div>
+      )}
 
       <div className="space-y-5">
         <div>
@@ -235,10 +249,10 @@ export function GoalForm({ remaining, goalCount, onAdd, disabled }: Props) {
         <button
           type="button"
           onClick={submit}
-          disabled={disabled || goalCount >= 8}
+          disabled={disabled || goalCount >= 8 || saving}
           className="w-full rounded-md bg-foreground py-3 text-xs font-bold uppercase tracking-widest text-background transition-colors hover:bg-primary disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Add to Goal Sheet
+          {saving ? "Adding..." : "Add to Goal Sheet"}
         </button>
 
         <p className="text-center font-mono text-[10px] uppercase tracking-widest text-muted-foreground">

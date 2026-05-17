@@ -99,6 +99,17 @@ export default function CyclesPage() {
     }
   };
 
+  const handleDeleteWindow = async (id: string) => {
+    if (!confirm("Delete this tracking window?")) return;
+    try {
+      await tracking.deleteWindow(id);
+      toast.success("Tracking window deleted");
+      await loadCycles();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to delete window");
+    }
+  };
+
   return (
     <div className="mx-auto max-w-7xl px-6 py-10">
       <header className="animate-in-up mb-10 flex items-end justify-between gap-6">
@@ -184,6 +195,7 @@ export default function CyclesPage() {
                 <Th>Start</Th>
                 <Th>End</Th>
                 <Th>Status</Th>
+                <Th className="w-16" />
               </tr>
             </thead>
             <tbody className="divide-y divide-border text-sm">
@@ -201,11 +213,23 @@ export default function CyclesPage() {
                       {window.is_open ? "Open" : "Closed"}
                     </span>
                   </td>
+                  <td className="px-3 py-4 text-right">
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteWindow(window.id)}
+                      className="rounded p-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                      aria-label="Delete"
+                    >
+                      <svg viewBox="0 0 24 24" className="size-3.5 fill-none stroke-current" strokeWidth={2}>
+                        <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                      </svg>
+                    </button>
+                  </td>
                 </tr>
               ))}
               {windows.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-sm text-muted-foreground">
+                  <td colSpan={7} className="px-6 py-12 text-center text-sm text-muted-foreground">
                     No tracking windows configured.
                   </td>
                 </tr>
@@ -299,8 +323,8 @@ export default function CyclesPage() {
 const activeBadge = "inline-flex rounded border border-emerald-200 bg-emerald-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700";
 const neutralBadge = "inline-flex rounded border border-border bg-secondary px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground";
 
-function Th({ children }: { children: React.ReactNode }) {
-  return <th className="px-6 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{children}</th>;
+function Th({ children, className }: { children?: React.ReactNode; className?: string }) {
+  return <th className={`px-6 py-3 text-left text-[10px] font-bold uppercase tracking-widest text-muted-foreground ${className ?? ""}`}>{children}</th>;
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

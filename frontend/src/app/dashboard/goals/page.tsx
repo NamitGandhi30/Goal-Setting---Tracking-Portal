@@ -209,6 +209,7 @@ function toUiGoal(goal: ApiGoal): UiGoal {
     cadence: toUiCadence(goal.cadence),
     weightage: goal.weightage,
     status: toSheetStatus(goal.status),
+    returnComment: goal.return_comment,
   };
 }
 

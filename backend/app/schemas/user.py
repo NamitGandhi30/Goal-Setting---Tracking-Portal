@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 from app.models.user import UserRole
 
@@ -18,6 +18,35 @@ class UserCreate(BaseModel):
     manager_id: uuid.UUID | None = None
     department: str | None = None
     password: str
+
+
+class UserCreateAdmin(BaseModel):
+    """Admin-only user creation (from admin console)."""
+    employee_id: str
+    name: str
+    email: EmailStr
+    role: UserRole = UserRole.EMPLOYEE
+    manager_id: uuid.UUID | None = None
+    department: str | None = None
+    password: str = "password123"
+
+
+class UserUpdate(BaseModel):
+    """Admin-only user update."""
+    role: UserRole | None = None
+    manager_id: uuid.UUID | None = None
+    department: str | None = None
+    is_active: bool | None = None
+
+
+class BulkAssignmentRequest(BaseModel):
+    department: str = Field(..., min_length=1, max_length=200)
+    manager_id: uuid.UUID
+    member_user_ids: list[uuid.UUID] = Field(..., min_length=1, max_length=200)
+
+
+class EntraTokenRequest(BaseModel):
+    token: str
 
 
 # ── Response Schemas ─────────────────────────────────────
@@ -44,6 +73,13 @@ class UserBrief(BaseModel):
     department: str | None
 
     model_config = {"from_attributes": True}
+
+
+class BulkAssignmentResult(BaseModel):
+    department: str
+    manager_id: uuid.UUID
+    updated_user_ids: list[uuid.UUID]
+    updated_count: int
 
 
 # ── Auth Schemas ─────────────────────────────────────────

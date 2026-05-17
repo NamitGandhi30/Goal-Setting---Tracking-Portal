@@ -24,6 +24,7 @@ export interface Goal {
   cadence?: GoalCadence;
   weightage: number;
   status?: SheetStatus;
+  returnComment?: string | null;
 }
 
 export interface CheckIn {

@@ -6,7 +6,9 @@ import type {
   SharedGoalCreatePayload, GoalCycleCreatePayload,
   CheckInPayload, CheckInPhase, ChatResponse, GoalCheckIn,
   ManagerCheckInPayload, TeamGoalCheckIn, TrackingSummary, TrackingWindow,
-  TrackingWindowCreatePayload,
+  TrackingWindowCreatePayload, UserCreatePayload, UserUpdatePayload,
+  TeamAnalytics, DepartmentAnalytics, TeamTrackingGoal,
+  BulkAssignmentPayload, BulkAssignmentResult, CompletionDashboard, GoalAudit,
 } from './types';
 
 const API_BASE = '/api/v1';
@@ -62,12 +64,47 @@ export const auth = {
       body: JSON.stringify({ email, password }),
     }),
   me: () => request<User>(`${API_BASE}/auth/me`),
+  entra: (token: string) =>
+    request<TokenResponse>(`${API_BASE}/auth/entra`, {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
 };
 
 /* ── Users ─────────────────────────────────────────────── */
 export const users = {
   list: () => request<User[]>(`${API_BASE}/users`),
+  create: (data: UserCreatePayload) =>
+    request<User>(`${API_BASE}/users`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+  update: (userId: string, data: UserUpdatePayload) =>
+    request<User>(`${API_BASE}/users/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  bulkAssignment: (data: BulkAssignmentPayload) =>
+    request<BulkAssignmentResult>(`${API_BASE}/users/bulk-assignment`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
   reports: (userId: string) => request<User[]>(`${API_BASE}/users/${userId}/reports`),
+  departments: () => request<string[]>(`${API_BASE}/users/departments`),
+  teamAnalytics: (cycleId?: string, phase?: CheckInPhase) => {
+    const params = new URLSearchParams();
+    if (cycleId) params.set('cycle_id', cycleId);
+    if (phase) params.set('phase', phase);
+    const qs = params.toString();
+    return request<TeamAnalytics[]>(`${API_BASE}/users/analytics/team${qs ? `?${qs}` : ''}`);
+  },
+  departmentAnalytics: (cycleId?: string, phase?: CheckInPhase) => {
+    const params = new URLSearchParams();
+    if (cycleId) params.set('cycle_id', cycleId);
+    if (phase) params.set('phase', phase);
+    const qs = params.toString();
+    return request<DepartmentAnalytics[]>(`${API_BASE}/users/analytics/department${qs ? `?${qs}` : ''}`);
+  },
 };
 
 /* ── Goal Cycles ───────────────────────────────────────── */
@@ -101,6 +138,12 @@ export const goals = {
     request<void>(`${API_BASE}/goals/${goalId}`, { method: 'DELETE' }),
   submit: (cycleId: string) =>
     request<Goal[]>(`${API_BASE}/goals/submit?cycle_id=${cycleId}`, { method: 'POST' }),
+  audit: (goalId: string) => request<GoalAudit[]>(`${API_BASE}/goals/${goalId}/audit`),
+  unlock: (goalId: string, reason: string) =>
+    request<Goal>(`${API_BASE}/goals/${goalId}/unlock`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    }),
 };
 
 /* ── Approvals ─────────────────────────────────────────── */
@@ -145,6 +188,8 @@ export const tracking = {
     }),
   teamCheckins: (phase?: CheckInPhase) =>
     request<TeamGoalCheckIn[]>(`${API_BASE}/tracking/team-checkins${phase ? `?phase=${phase}` : ''}`),
+  teamGoals: (cycleId: string, phase: CheckInPhase) =>
+    request<TeamTrackingGoal[]>(`${API_BASE}/tracking/team-goals?cycle_id=${cycleId}&phase=${phase}`),
   managerReview: (checkinId: string, data: ManagerCheckInPayload) =>
     request<GoalCheckIn>(`${API_BASE}/tracking/checkins/${checkinId}/manager-review`, {
       method: 'PUT',
@@ -158,6 +203,20 @@ export const tracking = {
     request<TrackingWindow>(`${API_BASE}/tracking/windows`, {
       method: 'POST',
       body: JSON.stringify(data),
+    }),
+  deleteWindow: (windowId: string) =>
+    request<void>(`${API_BASE}/tracking/windows/${windowId}`, { method: 'DELETE' }),
+};
+
+/* Reports */
+export const reports = {
+  completionDashboard: (cycleId: string, phase: CheckInPhase) =>
+    request<CompletionDashboard>(`${API_BASE}/reports/completion-dashboard?cycle_id=${cycleId}&phase=${phase}`),
+  achievementCsvUrl: (cycleId: string, phase?: CheckInPhase) =>
+    `${API_BASE}/reports/achievement.csv?cycle_id=${cycleId}${phase ? `&phase=${phase}` : ''}`,
+  sendCheckinReminders: (cycleId: string, phase: CheckInPhase) =>
+    request<{ queued: number }>(`${API_BASE}/reports/checkin-reminders?cycle_id=${cycleId}&phase=${phase}`, {
+      method: 'POST',
     }),
 };
 

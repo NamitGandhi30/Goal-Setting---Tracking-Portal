@@ -7,12 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 from fastapi import HTTPException, status
 
-from app.models.goal import Goal, GoalStatus
+from app.models.goal import Goal, GoalAudit, GoalAuditAction, GoalStatus
 from app.models.goal_approval import GoalApproval, ApprovalAction
 from app.models.shared_goal import SharedGoalAssignment
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.schemas.goal import GoalCreate, GoalUpdate
 from app.schemas.approval import ApprovalEditRequest
+from app.services.notification_service import NotificationService
 
 # ── Constants ────────────────────────────────────────────
 MAX_GOALS_PER_CYCLE = 8
@@ -31,6 +32,7 @@ class GoalService:
     ) -> list[Goal]:
         result = await self.db.execute(
             select(Goal)
+            .options(selectinload(Goal.approvals))
             .where(Goal.user_id == user_id, Goal.cycle_id == cycle_id)
             .order_by(Goal.created_at)
         )
@@ -46,6 +48,16 @@ class GoalService:
         if not goal:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Goal not found")
         return goal
+
+    async def get_goal_audits(self, goal_id: uuid.UUID, viewer: User) -> list[GoalAudit]:
+        goal = await self.get_goal_by_id(goal_id)
+        await self._validate_audit_viewer(goal, viewer)
+        result = await self.db.execute(
+            select(GoalAudit)
+            .where(GoalAudit.goal_id == goal_id)
+            .order_by(GoalAudit.created_at.desc())
+        )
+        return list(result.scalars().all())
 
     async def get_weightage_summary(
         self, user_id: uuid.UUID, cycle_id: uuid.UUID, exclude_goal_id: uuid.UUID | None = None
@@ -171,6 +183,18 @@ class GoalService:
             goal.status = GoalStatus.PENDING_APPROVAL
 
         await self.db.flush()
+        owner_result = await self.db.execute(select(User).where(User.id == user_id))
+        owner = owner_result.scalar_one_or_none()
+        if owner and owner.manager_id:
+            manager_result = await self.db.execute(select(User).where(User.id == owner.manager_id))
+            manager = manager_result.scalar_one_or_none()
+            if manager:
+                await NotificationService().goal_submitted(
+                    manager.email,
+                    manager.name,
+                    owner.name,
+                    str(cycle_id),
+                )
         return draft_goals
 
     # ── Approval Actions ─────────────────────────────────
@@ -209,6 +233,14 @@ class GoalService:
         )
         self.db.add(approval)
         await self.db.flush()
+        if goal.owner:
+            await NotificationService().goal_reviewed(
+                goal.owner.email,
+                goal.owner.name,
+                goal.title,
+                approved=True,
+                goal_id=str(goal.id),
+            )
         return goal
 
     async def return_goal(
@@ -231,6 +263,14 @@ class GoalService:
         )
         self.db.add(approval)
         await self.db.flush()
+        if goal.owner:
+            await NotificationService().goal_reviewed(
+                goal.owner.email,
+                goal.owner.name,
+                goal.title,
+                approved=False,
+                goal_id=str(goal.id),
+            )
         return goal
 
     async def edit_and_approve_goal(
@@ -267,6 +307,44 @@ class GoalService:
             comments=data.comments,
         )
         self.db.add(approval)
+        await self.db.flush()
+        if goal.owner:
+            await NotificationService().goal_reviewed(
+                goal.owner.email,
+                goal.owner.name,
+                goal.title,
+                approved=True,
+                goal_id=str(goal.id),
+            )
+        return goal
+
+    async def unlock_goal(
+        self, goal_id: uuid.UUID, admin_id: uuid.UUID, reason: str
+    ) -> Goal:
+        normalized_reason = reason.strip()
+        if not normalized_reason:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Unlock reason is required")
+
+        goal = await self.get_goal_by_id(goal_id)
+        if goal.status != GoalStatus.APPROVED:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Only approved goals can be unlocked",
+            )
+
+        before_values = self._goal_snapshot(goal)
+        goal.status = GoalStatus.RETURNED
+        after_values = self._goal_snapshot(goal)
+
+        audit = GoalAudit(
+            goal_id=goal.id,
+            actor_id=admin_id,
+            action=GoalAuditAction.ADMIN_UNLOCK,
+            reason=normalized_reason,
+            before_values=before_values,
+            after_values=after_values,
+        )
+        self.db.add(audit)
         await self.db.flush()
         return goal
 
@@ -345,3 +423,35 @@ class GoalService:
                 status.HTTP_403_FORBIDDEN,
                 "You are not the manager of this goal's owner",
             )
+
+    async def _validate_audit_viewer(self, goal: Goal, viewer: User) -> None:
+        if viewer.role == UserRole.ADMIN:
+            return
+        if viewer.role == UserRole.MANAGER:
+            result = await self.db.execute(select(User).where(User.id == goal.user_id))
+            owner = result.scalar_one_or_none()
+            if owner and owner.manager_id == viewer.id:
+                return
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "You cannot view audit history for this goal",
+        )
+
+    @staticmethod
+    def _goal_snapshot(goal: Goal) -> dict:
+        return {
+            "id": str(goal.id),
+            "user_id": str(goal.user_id),
+            "cycle_id": str(goal.cycle_id),
+            "thrust_area": goal.thrust_area,
+            "title": goal.title,
+            "description": goal.description,
+            "uom": goal.uom.value,
+            "target": goal.target,
+            "deadline": goal.deadline.isoformat() if goal.deadline else None,
+            "cadence": goal.cadence.value,
+            "weightage": goal.weightage,
+            "status": goal.status.value,
+            "is_shared": goal.is_shared,
+            "created_by": str(goal.created_by) if goal.created_by else None,
+        }

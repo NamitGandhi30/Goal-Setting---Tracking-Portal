@@ -9,14 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.check_in import (
+    CheckInAuditAction,
     CheckInPhase,
     GoalCheckIn,
+    GoalCheckInAudit,
     ProgressStatus,
     TrackingWindow,
     TrackingWindowType,
 )
 from app.models.goal import Goal, GoalStatus, UnitOfMeasure
 from app.models.goal_cycle import GoalCycle
+from app.models.user import User, UserRole
 from app.schemas.check_in import CheckInUpsert, ManagerCheckInReview, TrackingWindowCreate
 
 
@@ -66,18 +69,27 @@ class TrackingService:
             )
             self.db.add(checkin)
         else:
+            reviewed = bool(checkin.manager_comment or checkin.manager_rating is not None)
+            previous = self._snapshot(checkin) if reviewed else None
             checkin.actual_value = data.actual_value
             checkin.progress_score = score
             checkin.progress_status = progress_status
             checkin.employee_comment = data.employee_comment
             checkin.self_rating = data.self_rating
             checkin.updated_by = user_id
+            if previous:
+                self._add_audit(
+                    checkin,
+                    changed_by=user_id,
+                    action=CheckInAuditAction.EMPLOYEE_EDIT_AFTER_REVIEW,
+                    previous=previous,
+                )
 
         await self.db.flush()
         return checkin
 
     async def manager_review_checkin(
-        self, checkin_id: uuid.UUID, reviewer_id: uuid.UUID, data: ManagerCheckInReview
+        self, checkin_id: uuid.UUID, reviewer_id: uuid.UUID, data: ManagerCheckInReview, is_admin: bool = False
     ) -> GoalCheckIn:
         result = await self.db.execute(
             select(GoalCheckIn)
@@ -87,14 +99,22 @@ class TrackingService:
         checkin = result.scalar_one_or_none()
         if not checkin:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "Check-in not found")
-        if checkin.goal.owner.manager_id != reviewer_id:
+        if not is_admin and checkin.goal.owner.manager_id != reviewer_id:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Not this employee's manager")
         await self._ensure_window_open(
             checkin.goal.cycle_id, TrackingWindowType.REVIEW, checkin.phase, allow_fallback=True
         )
+        previous = self._snapshot(checkin) if checkin.manager_comment or checkin.manager_rating is not None else None
         checkin.manager_comment = data.manager_comment
         checkin.manager_rating = data.manager_rating
         checkin.updated_by = reviewer_id
+        if previous:
+            self._add_audit(
+                checkin,
+                changed_by=reviewer_id,
+                action=CheckInAuditAction.MANAGER_REVIEW_EDIT,
+                previous=previous,
+            )
         await self.db.flush()
         return checkin
 
@@ -108,6 +128,52 @@ class TrackingService:
         )
         if phase:
             query = query.where(GoalCheckIn.phase == phase)
+        result = await self.db.execute(query)
+        return list(result.scalars().all())
+
+    async def checkin_audits(self, checkin_id: uuid.UUID, current_user: User) -> list[GoalCheckInAudit]:
+        checkin_result = await self.db.execute(
+            select(GoalCheckIn)
+            .options(selectinload(GoalCheckIn.goal).selectinload(Goal.owner))
+            .where(GoalCheckIn.id == checkin_id)
+        )
+        checkin = checkin_result.scalar_one_or_none()
+        if not checkin:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Check-in not found")
+        if (
+            current_user.role != UserRole.ADMIN
+            and checkin.goal.user_id != current_user.id
+            and checkin.goal.owner.manager_id != current_user.id
+        ):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Not allowed to view this audit trail")
+        audit_result = await self.db.execute(
+            select(GoalCheckInAudit)
+            .where(GoalCheckInAudit.checkin_id == checkin_id)
+            .order_by(GoalCheckInAudit.created_at.desc())
+        )
+        return list(audit_result.scalars().all())
+
+    async def team_tracking_goals(
+        self,
+        current_user: User,
+        cycle_id: uuid.UUID,
+        phase: CheckInPhase,
+    ) -> list[Goal]:
+        """Return approved team goals, including goals that do not have a check-in yet."""
+        query = (
+            select(Goal)
+            .options(
+                selectinload(Goal.owner),
+                selectinload(Goal.checkins),
+            )
+            .where(
+                Goal.cycle_id == cycle_id,
+                Goal.status == GoalStatus.APPROVED,
+            )
+            .order_by(Goal.thrust_area, Goal.created_at)
+        )
+        if current_user.role != UserRole.ADMIN:
+            query = query.where(Goal.owner.has(manager_id=current_user.id))
         result = await self.db.execute(query)
         return list(result.scalars().all())
 
@@ -152,6 +218,16 @@ class TrackingService:
             query = query.where(TrackingWindow.cycle_id == cycle_id)
         result = await self.db.execute(query)
         return list(result.scalars().all())
+
+    async def delete_window(self, window_id: uuid.UUID) -> None:
+        result = await self.db.execute(
+            select(TrackingWindow).where(TrackingWindow.id == window_id)
+        )
+        window = result.scalar_one_or_none()
+        if not window:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Window not found")
+        await self.db.delete(window)
+        await self.db.flush()
 
     async def is_window_open(
         self,
@@ -223,3 +299,44 @@ class TrackingService:
         open_now = await self.is_window_open(cycle_id, window_type, phase)
         if not open_now and not allow_fallback:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "This tracking window is closed")
+
+    @staticmethod
+    def _snapshot(checkin: GoalCheckIn) -> dict:
+        return {
+            "actual_value": checkin.actual_value,
+            "progress_score": checkin.progress_score,
+            "progress_status": checkin.progress_status,
+            "employee_comment": checkin.employee_comment,
+            "manager_comment": checkin.manager_comment,
+            "self_rating": checkin.self_rating,
+            "manager_rating": checkin.manager_rating,
+        }
+
+    def _add_audit(
+        self,
+        checkin: GoalCheckIn,
+        changed_by: uuid.UUID,
+        action: CheckInAuditAction,
+        previous: dict,
+    ) -> None:
+        self.db.add(
+            GoalCheckInAudit(
+                checkin_id=checkin.id,
+                changed_by=changed_by,
+                action=action,
+                previous_actual_value=previous["actual_value"],
+                new_actual_value=checkin.actual_value,
+                previous_progress_score=previous["progress_score"],
+                new_progress_score=checkin.progress_score,
+                previous_progress_status=previous["progress_status"],
+                new_progress_status=checkin.progress_status,
+                previous_employee_comment=previous["employee_comment"],
+                new_employee_comment=checkin.employee_comment,
+                previous_manager_comment=previous["manager_comment"],
+                new_manager_comment=checkin.manager_comment,
+                previous_self_rating=previous["self_rating"],
+                new_self_rating=checkin.self_rating,
+                previous_manager_rating=previous["manager_rating"],
+                new_manager_rating=checkin.manager_rating,
+            )
+        )

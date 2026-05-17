@@ -5,7 +5,7 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
-from app.models.goal import GoalCadence, UnitOfMeasure, GoalStatus
+from app.models.goal import GoalAuditAction, GoalCadence, UnitOfMeasure, GoalStatus
 
 
 # ── Request Schemas ──────────────────────────────────────
@@ -32,6 +32,10 @@ class GoalUpdate(BaseModel):
     weightage: float | None = Field(None, ge=10, le=100)
 
 
+class GoalUnlockRequest(BaseModel):
+    reason: str = Field(..., min_length=1, max_length=1000)
+
+
 # ── Response Schemas ─────────────────────────────────────
 
 class GoalOut(BaseModel):
@@ -51,6 +55,7 @@ class GoalOut(BaseModel):
     created_by: uuid.UUID | None
     created_at: datetime
     updated_at: datetime
+    return_comment: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -67,3 +72,16 @@ class WeightageSummary(BaseModel):
     goal_count: int
     remaining_weightage: float
     can_add_more: bool
+
+
+class GoalAuditOut(BaseModel):
+    id: uuid.UUID
+    goal_id: uuid.UUID
+    actor_id: uuid.UUID
+    action: GoalAuditAction
+    reason: str
+    before_values: dict
+    after_values: dict
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

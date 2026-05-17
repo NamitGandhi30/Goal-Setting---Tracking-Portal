@@ -10,7 +10,8 @@ from app.core.security import hash_password, verify_password, create_access_toke
 from app.core.dependencies import CurrentUser
 from app.db.session import get_db
 from app.models.user import User
-from app.schemas.user import LoginRequest, TokenResponse, UserOut, UserCreate
+from app.schemas.user import EntraTokenRequest, LoginRequest, TokenResponse, UserOut, UserCreate
+from app.services.entra_service import EntraService
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -36,6 +37,17 @@ async def login(
             detail="Account is deactivated",
         )
 
+    token = create_access_token({"sub": str(user.id), "role": user.role.value})
+    return TokenResponse(access_token=token, user=UserOut.model_validate(user))
+
+
+@router.post("/entra", response_model=TokenResponse)
+async def entra_login(
+    body: EntraTokenRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Exchange a Microsoft Entra ID token for the portal JWT."""
+    user = await EntraService(db).authenticate(body.token)
     token = create_access_token({"sub": str(user.id), "role": user.role.value})
     return TokenResponse(access_token=token, user=UserOut.model_validate(user))
 

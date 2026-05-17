@@ -1,11 +1,14 @@
 """Deterministic natural-language assistant for goal workflows."""
 
+import json
 import re
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
 from app.core.dependencies import CurrentUser
 from app.db.session import get_db
 from app.models.check_in import CheckInPhase
@@ -32,6 +35,16 @@ async def chat(
     cycle = await _active_cycle(db)
     goals = await GoalService(db).get_user_goals(current_user.id, cycle.id)
 
+    settings = get_settings()
+    if settings.ASSISTANT_PROVIDER.lower() == "openai" and settings.OPENAI_API_KEY:
+        llm_response = await _chat_with_openai(message, normalized, current_user, cycle, goals, db, settings)
+        if llm_response:
+            return llm_response
+
+    return await _deterministic_chat(message, normalized, current_user, cycle, goals, db)
+
+
+async def _deterministic_chat(message: str, normalized: str, current_user, cycle: GoalCycle, goals, db: AsyncSession) -> ChatResponse:
     if any(word in normalized for word in ("deadline", "window", "policy", "calendar")):
         tracking = TrackingService(db)
         windows = await tracking.list_windows(cycle.id)
@@ -48,7 +61,7 @@ async def chat(
             )
         return ChatResponse(reply=reply, intent="policy_query")
 
-    if any(word in normalized for word in ("stats", "performance", "progress", "monthly", "score")):
+    if any(word in normalized for word in ("stats", "performance", "progress", "monthly", "score", "report", "analytics", "track")):
         phase = _phase_from_text(normalized)
         summary = await TrackingService(db).summary(current_user.id, cycle.id, phase)
         return ChatResponse(
@@ -64,7 +77,7 @@ async def chat(
             ],
         )
 
-    if any(word in normalized for word in ("check in", "check-in", "actual", "achieved", "achievement", "log")):
+    if any(word in normalized for word in ("check in", "check-in", "actual", "achieved", "achievement", "log", "update")):
         goal = _match_goal(normalized, goals)
         actual = _actual_from_text(normalized)
         if not goal or actual is None:
@@ -88,7 +101,8 @@ async def chat(
             action_taken=True,
         )
 
-    if any(word in normalized for word in ("create goal", "add goal", "new goal", "set goal")):
+    create_keywords = ("create goal", "add goal", "new goal", "set goal", "create task", "add task", "new task", "assign task", "create objective")
+    if any(word in normalized for word in create_keywords):
         weightage = _weightage_from_text(normalized)
         target = _target_from_text(normalized)
         title = _title_from_text(message)
@@ -154,6 +168,202 @@ async def chat(
     )
 
 
+async def _chat_with_openai(
+    message: str,
+    normalized: str,
+    current_user,
+    cycle: GoalCycle,
+    goals,
+    db: AsyncSession,
+    settings,
+) -> ChatResponse | None:
+    tools = [
+        {
+            "type": "function",
+            "name": "create_goal",
+            "description": "Create one goal for the current user in the active cycle.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "thrust_area": {"type": "string"},
+                    "target": {"type": "number"},
+                    "weightage": {"type": "number"},
+                    "uom": {"type": "string", "enum": [item.value for item in UnitOfMeasure]},
+                    "cadence": {"type": "string", "enum": [item.value for item in GoalCadence]},
+                    "deadline": {"type": "string", "description": "ISO date YYYY-MM-DD, if supplied"},
+                    "description": {"type": "string"},
+                },
+                "required": ["title", "thrust_area", "target", "weightage", "uom", "cadence"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "type": "function",
+            "name": "log_checkin",
+            "description": "Log a quarterly check-in against one of the user's goals.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal_hint": {"type": "string"},
+                    "phase": {"type": "string", "enum": [item.value for item in CheckInPhase]},
+                    "actual_value": {"type": "number"},
+                    "employee_comment": {"type": "string"},
+                    "self_rating": {"type": "number"},
+                },
+                "required": ["goal_hint", "phase", "actual_value"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "type": "function",
+            "name": "show_performance",
+            "description": "Return the user's performance summary for a quarter.",
+            "parameters": {
+                "type": "object",
+                "properties": {"phase": {"type": "string", "enum": [item.value for item in CheckInPhase]}},
+                "required": ["phase"],
+                "additionalProperties": False,
+            },
+        },
+        {
+            "type": "function",
+            "name": "show_policy_windows",
+            "description": "Return active cycle governance and tracking windows.",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    ]
+    payload = {
+        "model": settings.OPENAI_MODEL,
+        "input": [
+            {
+                "role": "system",
+                "content": (
+                    "You route requests for a goal-setting portal. Use exactly one tool when the "
+                    "user asks to create goals, log check-ins, view performance, or view policy windows. "
+                    "Do not invent values. If required values are missing, answer normally with a concise clarification."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Active cycle: {cycle.name}. Existing goals: "
+                    f"{'; '.join(goal.title for goal in goals) or 'none'}. User request: {message}"
+                ),
+            },
+        ],
+        "tools": tools,
+        "tool_choice": "auto",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(
+                f"{settings.OPENAI_BASE_URL.rstrip('/')}/responses",
+                headers={
+                    "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            )
+            response.raise_for_status()
+    except (httpx.HTTPError, httpx.TimeoutException):
+        return None
+
+    data = response.json()
+    tool_call = _first_tool_call(data)
+    if not tool_call:
+        text = _response_text(data)
+        return ChatResponse(reply=text, intent="llm_clarification") if text else None
+
+    try:
+        args = json.loads(tool_call.get("arguments") or "{}")
+    except json.JSONDecodeError:
+        return None
+
+    return await _execute_assistant_tool(tool_call.get("name", ""), args, message, normalized, current_user, cycle, goals, db)
+
+
+def _first_tool_call(data: dict) -> dict | None:
+    for item in data.get("output", []):
+        if item.get("type") in {"function_call", "tool_call"}:
+            return item
+    return None
+
+
+def _response_text(data: dict) -> str:
+    if isinstance(data.get("output_text"), str):
+        return data["output_text"]
+    chunks: list[str] = []
+    for item in data.get("output", []):
+        for content in item.get("content", []):
+            if content.get("type") in {"output_text", "text"} and content.get("text"):
+                chunks.append(content["text"])
+    return "\n".join(chunks).strip()
+
+
+async def _execute_assistant_tool(name: str, args: dict, message: str, normalized: str, current_user, cycle: GoalCycle, goals, db: AsyncSession) -> ChatResponse | None:
+    if name == "show_policy_windows":
+        return await _deterministic_chat("policy windows", "policy windows", current_user, cycle, goals, db)
+    if name == "show_performance":
+        phase = _phase_from_value(args.get("phase")) or _phase_from_text(normalized)
+        summary = await TrackingService(db).summary(current_user.id, cycle.id, phase)
+        return ChatResponse(
+            reply=(
+                f"{phase.value} performance: {summary['logged_count']} of {summary['goal_count']} "
+                f"approved goals have check-ins. Weighted score is {summary['weighted_score']}%. "
+                f"{summary['completed_count']} completed, {summary['at_risk_count']} at risk."
+            ),
+            intent="performance_query_llm",
+        )
+    if name == "log_checkin":
+        goal = _match_goal(str(args.get("goal_hint", "")).lower(), goals)
+        actual = args.get("actual_value")
+        phase = _phase_from_value(args.get("phase")) or CheckInPhase.Q1
+        if not goal or not isinstance(actual, (int, float)):
+            return ChatResponse(reply="I need a matching goal and numeric actual value before I can log that.", intent="checkin_missing_details")
+        checkin = await TrackingService(db).upsert_employee_checkin(
+            goal.id,
+            current_user.id,
+            CheckInUpsert(
+                phase=phase,
+                actual_value=float(actual),
+                employee_comment=args.get("employee_comment") or message,
+                self_rating=args.get("self_rating"),
+            ),
+        )
+        return ChatResponse(
+            reply=f"Logged {phase.value} check-in for {goal.title}: actual {actual}, score {checkin.progress_score}%.",
+            intent="checkin_upsert_llm",
+            action_taken=True,
+        )
+    if name == "create_goal":
+        required = ("title", "thrust_area", "target", "weightage", "uom", "cadence")
+        if any(args.get(key) in (None, "") for key in required):
+            return ChatResponse(reply="I need title, thrust area, target, cadence, unit, and weightage to create the goal.", intent="goal_create_missing_details")
+        from datetime import date
+
+        goal = await GoalService(db).create_goal(
+            current_user.id,
+            cycle.id,
+            GoalCreate(
+                thrust_area=str(args["thrust_area"])[:300],
+                title=str(args["title"])[:500],
+                description=args.get("description") or f"Created from assistant: {message}",
+                uom=UnitOfMeasure(args["uom"]),
+                target=float(args["target"]),
+                weightage=float(args["weightage"]),
+                cadence=GoalCadence(args["cadence"]),
+                deadline=date.fromisoformat(args["deadline"]) if args.get("deadline") else None,
+            ),
+        )
+        return ChatResponse(
+            reply=f"Created {goal.cadence.value} goal '{goal.title}' with target {goal.target} and {goal.weightage}% weightage.",
+            intent="goal_create_llm",
+            action_taken=True,
+        )
+    return None
+
+
 async def _active_cycle(db: AsyncSession) -> GoalCycle:
     result = await db.execute(select(GoalCycle).where(GoalCycle.is_active == True))
     cycle = result.scalar_one_or_none()
@@ -167,6 +377,15 @@ def _phase_from_text(text: str) -> CheckInPhase:
         if phase.value.lower() in text:
             return phase
     return CheckInPhase.Q1
+
+
+def _phase_from_value(value: object) -> CheckInPhase | None:
+    if not isinstance(value, str):
+        return None
+    for phase in CheckInPhase:
+        if phase.value.lower() == value.lower():
+            return phase
+    return None
 
 
 def _first_number(text: str) -> float | None:
@@ -190,7 +409,7 @@ def _target_from_text(text: str) -> float | None:
 
 
 def _title_from_text(message: str) -> str:
-    title = re.sub(r"(?i)\b(create|add|new|set)\s+goal\b", "", message).strip()
+    title = re.sub(r"(?i)\b(create|add|new|set|assign)\s+(?:a\s+)?(goal|task|objective)\b", "", message).strip()
     title = re.split(r"(?i)\btarget\b|\bweightage\b|\bweight\b", title)[0].strip(" :,-")
     return title[:500]
 

@@ -32,6 +32,11 @@ class TrackingWindowType(str, enum.Enum):
     REVIEW = "review"
 
 
+class CheckInAuditAction(str, enum.Enum):
+    EMPLOYEE_EDIT_AFTER_REVIEW = "employee_edit_after_review"
+    MANAGER_REVIEW_EDIT = "manager_review_edit"
+
+
 class GoalCheckIn(Base):
     __tablename__ = "goal_checkins"
 
@@ -72,6 +77,54 @@ class GoalCheckIn(Base):
     )
 
     goal: Mapped["Goal"] = relationship("Goal", back_populates="checkins")  # noqa: F821
+    audit_entries: Mapped[list["GoalCheckInAudit"]] = relationship(
+        "GoalCheckInAudit", back_populates="checkin"
+    )
+
+
+class GoalCheckInAudit(Base):
+    __tablename__ = "goal_checkin_audits"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    checkin_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("goal_checkins.id"), nullable=False, index=True
+    )
+    changed_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    action: Mapped[CheckInAuditAction] = mapped_column(
+        SAEnum(CheckInAuditAction, name="check_in_audit_action", values_callable=enum_values),
+        nullable=False,
+    )
+    previous_actual_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    new_actual_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    previous_progress_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    new_progress_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    previous_progress_status: Mapped[ProgressStatus | None] = mapped_column(
+        SAEnum(ProgressStatus, name="progress_status", values_callable=enum_values),
+        nullable=True,
+    )
+    new_progress_status: Mapped[ProgressStatus | None] = mapped_column(
+        SAEnum(ProgressStatus, name="progress_status", values_callable=enum_values),
+        nullable=True,
+    )
+    previous_employee_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    new_employee_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    previous_manager_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    new_manager_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    previous_self_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    new_self_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    previous_manager_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    new_manager_rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    checkin: Mapped["GoalCheckIn"] = relationship(
+        "GoalCheckIn", back_populates="audit_entries"
+    )
 
 
 class TrackingWindow(Base):

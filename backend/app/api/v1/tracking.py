@@ -9,15 +9,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import AdminOnly, CurrentUser, ManagerOrAdmin
 from app.db.session import get_db
-from app.models.check_in import CheckInPhase
+from app.models.check_in import CheckInPhase, ProgressStatus
 from app.schemas.check_in import (
     CheckInUpsert,
+    GoalCheckInAuditOut,
     GoalCheckInOut,
     ManagerCheckInReview,
     TrackingSummary,
     TrackingWindowCreate,
     TrackingWindowOut,
     TeamGoalCheckInOut,
+    TeamTrackingGoalOut,
 )
 from app.services.tracking_service import TrackingService
 
@@ -69,6 +71,46 @@ async def list_team_checkins(
     return result
 
 
+@router.get("/team-goals", response_model=list[TeamTrackingGoalOut])
+async def list_team_tracking_goals(
+    current_user: ManagerOrAdmin,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    cycle_id: uuid.UUID = Query(...),
+    phase: CheckInPhase = Query(CheckInPhase.Q1),
+):
+    svc = TrackingService(db)
+    rows: list[TeamTrackingGoalOut] = []
+    for goal in await svc.team_tracking_goals(current_user, cycle_id, phase):
+        checkin = next((item for item in goal.checkins if item.phase == phase), None)
+        rows.append(
+            TeamTrackingGoalOut(
+                goal_id=goal.id,
+                cycle_id=goal.cycle_id,
+                goal_title=goal.title,
+                owner_id=goal.owner.id,
+                owner_name=goal.owner.name,
+                owner_employee_id=goal.owner.employee_id,
+                owner_department=goal.owner.department,
+                thrust_area=goal.thrust_area,
+                target=goal.target,
+                weightage=goal.weightage,
+                cadence=goal.cadence.value,
+                deadline=goal.deadline,
+                phase=phase,
+                checkin_id=checkin.id if checkin else None,
+                actual_value=checkin.actual_value if checkin else None,
+                progress_score=checkin.progress_score if checkin else 0,
+                progress_status=checkin.progress_status if checkin else ProgressStatus.NOT_STARTED,
+                employee_comment=checkin.employee_comment if checkin else None,
+                manager_comment=checkin.manager_comment if checkin else None,
+                self_rating=checkin.self_rating if checkin else None,
+                manager_rating=checkin.manager_rating if checkin else None,
+                updated_at=checkin.updated_at if checkin else None,
+            )
+        )
+    return rows
+
+
 @router.put("/checkins/{checkin_id}/manager-review", response_model=GoalCheckInOut)
 async def review_checkin(
     checkin_id: uuid.UUID,
@@ -78,8 +120,26 @@ async def review_checkin(
 ):
     svc = TrackingService(db)
     return GoalCheckInOut.model_validate(
-        await svc.manager_review_checkin(checkin_id, current_user.id, body)
+        await svc.manager_review_checkin(
+            checkin_id,
+            current_user.id,
+            body,
+            is_admin=current_user.role.value == "admin",
+        )
     )
+
+
+@router.get("/checkins/{checkin_id}/audits", response_model=list[GoalCheckInAuditOut])
+async def list_checkin_audits(
+    checkin_id: uuid.UUID,
+    current_user: CurrentUser,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    svc = TrackingService(db)
+    return [
+        GoalCheckInAuditOut.model_validate(item)
+        for item in await svc.checkin_audits(checkin_id, current_user)
+    ]
 
 
 @router.get("/summary", response_model=TrackingSummary)
@@ -113,6 +173,16 @@ async def list_windows(
     svc = TrackingService(db)
     windows = await svc.list_windows(cycle_id)
     return [_window_out(window) for window in windows]
+
+
+@router.delete("/windows/{window_id}", status_code=204)
+async def delete_window(
+    window_id: uuid.UUID,
+    _admin: AdminOnly,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    svc = TrackingService(db)
+    await svc.delete_window(window_id)
 
 
 def _window_out(window) -> TrackingWindowOut:

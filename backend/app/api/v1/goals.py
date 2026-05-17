@@ -6,9 +6,16 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import CurrentUser
+from app.core.dependencies import AdminOnly, CurrentUser, ManagerOrAdmin
 from app.db.session import get_db
-from app.schemas.goal import GoalCreate, GoalUpdate, GoalOut, WeightageSummary
+from app.schemas.goal import (
+    GoalAuditOut,
+    GoalCreate,
+    GoalOut,
+    GoalUnlockRequest,
+    GoalUpdate,
+    WeightageSummary,
+)
 from app.services.goal_service import GoalService, REQUIRED_TOTAL_WEIGHTAGE, MAX_GOALS_PER_CYCLE
 
 router = APIRouter(prefix="/goals", tags=["Goals"])
@@ -66,6 +73,31 @@ async def update_goal(
     """Update a draft or returned goal."""
     svc = GoalService(db)
     goal = await svc.update_goal(goal_id, current_user.id, body)
+    return GoalOut.model_validate(goal)
+
+
+@router.get("/{goal_id}/audit", response_model=list[GoalAuditOut])
+async def get_goal_audit_history(
+    goal_id: uuid.UUID,
+    current_user: ManagerOrAdmin,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Manager/Admin: view immutable audit history for a goal."""
+    svc = GoalService(db)
+    audits = await svc.get_goal_audits(goal_id, current_user)
+    return [GoalAuditOut.model_validate(audit) for audit in audits]
+
+
+@router.post("/{goal_id}/unlock", response_model=GoalOut)
+async def unlock_goal(
+    goal_id: uuid.UUID,
+    body: GoalUnlockRequest,
+    current_user: AdminOnly,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Admin: unlock an approved goal and return it to the editable workflow."""
+    svc = GoalService(db)
+    goal = await svc.unlock_goal(goal_id, current_user.id, body.reason)
     return GoalOut.model_validate(goal)
 
 
