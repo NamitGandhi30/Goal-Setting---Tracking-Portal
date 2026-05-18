@@ -62,7 +62,7 @@ export default function GoalsPage() {
   const totalWeight = summary?.total_weightage ?? uiGoals.reduce((sum, goal) => sum + goal.weightage, 0);
   const remaining = Math.max(0, 100 - totalWeight);
   const status = sheetStatus(apiGoals);
-  const editable = apiGoals.every((goal) => goal.status === "draft" || goal.status === "returned");
+  const editable = status === "Draft" || status === "Returned";
   const errors = validateGoals(uiGoals, totalWeight);
   const valid = errors.length === 0;
 

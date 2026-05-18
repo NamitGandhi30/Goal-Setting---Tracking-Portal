@@ -68,7 +68,8 @@ async def _deterministic_chat(message: str, normalized: str, current_user, cycle
             reply=(
                 f"{phase.value} performance: {summary['logged_count']} of {summary['goal_count']} "
                 f"approved goals have check-ins. Weighted score is {summary['weighted_score']}%. "
-                f"{summary['completed_count']} completed, {summary['at_risk_count']} at risk."
+                f"{summary['completed_count']} completed, {summary['at_risk_count']} at risk. "
+                "Would you like to log a check-in now?"
             ),
             intent="performance_query",
             suggestions=[
@@ -82,7 +83,7 @@ async def _deterministic_chat(message: str, normalized: str, current_user, cycle
         actual = _actual_from_text(normalized)
         if not goal or actual is None:
             return ChatResponse(
-                reply="I can log that, but I need a goal name and actual value. Try: Log Q1 actual 80 for customer experience.",
+                reply="I'd love to log that check-in for you. Which goal is this for, and what is the actual value achieved? (e.g. 'Log Q1 actual 80 for customer experience')",
                 intent="checkin_missing_details",
                 suggestions=[ChatSuggestion(label="Example", message="Log Q1 actual 80 for customer experience")],
             )
@@ -109,8 +110,8 @@ async def _deterministic_chat(message: str, normalized: str, current_user, cycle
         if not title or weightage is None or target is None:
             return ChatResponse(
                 reply=(
-                    "I can create the goal from chat. Please include a title, target, and weightage. "
-                    "Example: Create goal Improve NPS target 80 weightage 20."
+                    "I'd be happy to help you create a new goal! What should the title, target, and weightage be? "
+                    "(For example: 'Create goal Improve NPS target 80 weightage 20')"
                 ),
                 intent="goal_create_missing_details",
                 suggestions=[
@@ -180,7 +181,7 @@ async def _deterministic_chat(message: str, normalized: str, current_user, cycle
         )
 
     return ChatResponse(
-        reply="I understood this as a goal portal question, but I need a clearer action: create a goal, log a check-in, show stats, or show deadlines.",
+        reply="I understood this as a goal portal question, but I'm not sure what action to take. Would you like to create a goal, log a check-in, show your stats, or view the policy deadlines?",
         intent="unknown",
         suggestions=[
             ChatSuggestion(label="Show stats", message="Show my Q1 performance stats"),
@@ -543,7 +544,7 @@ def _goal_confirmation_reply(
     if deadline:
         lines.append(f"Deadline: {deadline}")
     lines.append("")
-    lines.append("Reply with 'Create goal now' to save it, or tell me what to change.")
+    lines.append("Does this look correct? Reply with 'Create goal now' to save it, or tell me what you'd like to change.")
     return "\n".join(lines)
 
 

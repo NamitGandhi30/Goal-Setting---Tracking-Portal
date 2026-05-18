@@ -39,15 +39,18 @@ PROGRESS_STATUSES = list(ProgressStatus.__members__.values())
 DEFAULT_PASSWORD = "password123"
 DEMO_ADMIN_EMAIL = "admin@company.com"
 DEMO_MANAGER_EMAIL = "manager@company.com"
-DEMO_EMPLOYEE_EMAIL = "amit@company.com"
-ADMIN_COUNT = 50
-MANAGER_COUNT = 100
-EMPLOYEE_COUNT = 300
-GOALS_PER_EMPLOYEE_RANGE = (4, 8)
+DEMO_EMPLOYEES = [
+    {"name": "Alice Smith", "email": "demo1@company.com"},
+    {"name": "Bob Jones", "email": "demo2@company.com"},
+    {"name": "Charlie Brown", "email": "demo3@company.com"},
+    {"name": "Diana Prince", "email": "demo4@company.com"},
+    {"name": "Evan Wright", "email": "demo5@company.com"}
+]
+GOALS_PER_EMPLOYEE_RANGE = (6, 12)
 SHARED_GOAL_RATE = 0.35
-SHARED_ASSIGNMENT_RANGE = (1, 5)
+SHARED_ASSIGNMENT_RANGE = (1, 3)
 CHECKIN_PHASES = [CheckInPhase.Q1, CheckInPhase.Q2, CheckInPhase.Q3, CheckInPhase.Q4]
-GOAL_AUDIT_COUNT = 200
+GOAL_AUDIT_COUNT = 50
 
 def get_random_user_name():
     return f"{random.choice(FIRST_NAMES)} {random.choice(LAST_NAMES)}"
@@ -85,7 +88,8 @@ async def seed_data():
         print("Seeding Users...")
         hashed = hash_password(DEFAULT_PASSWORD)
         users = []
-        used_emails.update({DEMO_ADMIN_EMAIL, DEMO_MANAGER_EMAIL, DEMO_EMPLOYEE_EMAIL})
+        used_emails.update({DEMO_ADMIN_EMAIL, DEMO_MANAGER_EMAIL})
+        used_emails.update([e["email"] for e in DEMO_EMPLOYEES])
 
         demo_admin = User(
             employee_id="EMP-ADM-000",
@@ -95,68 +99,37 @@ async def seed_data():
             department="Administration",
             hashed_password=hashed,
         )
+        session.add(demo_admin)
+        await session.flush()
+        users.append(demo_admin)
+
         demo_manager = User(
             employee_id="EMP-MGR-000",
             name="Demo Manager",
             email=DEMO_MANAGER_EMAIL,
             role=UserRole.MANAGER,
             department="Engineering",
+            manager_id=demo_admin.id,
             hashed_password=hashed,
         )
-        demo_employee = User(
-            employee_id="EMP-EMP-000",
-            name="Amit Patel",
-            email=DEMO_EMPLOYEE_EMAIL,
-            role=UserRole.EMPLOYEE,
-            department="Engineering",
-            manager_id=demo_manager.id,
-            hashed_password=hashed,
-        )
-        users.append(demo_admin)
-        # 5 Admins
-        for i in range(ADMIN_COUNT - 1):
-            name = get_random_user_name()
-            users.append(User(
-                employee_id=f"EMP-ADM-{i+1:03}",
-                name=name,
-                email=get_unique_email(name),
-                role=UserRole.ADMIN,
-                department="Administration",
-                hashed_password=hashed
-            ))
+        session.add(demo_manager)
+        await session.flush()
+        managers = [demo_manager]
 
-        # 10 Managers
-        managers = []
-        managers.append(demo_manager)
-        for i in range(MANAGER_COUNT - 1):
-            name = get_random_user_name()
-            mgr = User(
-                employee_id=f"EMP-MGR-{i+1:03}",
-                name=name,
-                email=get_unique_email(name),
-                role=UserRole.MANAGER,
-                department=random.choice(DEPARTMENTS),
-                hashed_password=hashed
-            )
-            managers.append(mgr)
-
-        # 30 Employees
         employees = []
-        employees.append(demo_employee)
-        for i in range(EMPLOYEE_COUNT - 1):
-            name = get_random_user_name()
+        for i, emp_data in enumerate(DEMO_EMPLOYEES):
             emp = User(
                 employee_id=f"EMP-EMP-{i+1:03}",
-                name=name,
-                email=get_unique_email(name),
+                name=emp_data["name"],
+                email=emp_data["email"],
                 role=UserRole.EMPLOYEE,
-                department=random.choice(DEPARTMENTS),
-                manager_id=random.choice(managers).id if managers else None,
-                hashed_password=hashed
+                department="Engineering",
+                manager_id=demo_manager.id,
+                hashed_password=hashed,
             )
             employees.append(emp)
 
-        session.add_all(users + managers + employees)
+        session.add_all(employees)
         await session.commit()
 
         print("Seeding Goal Cycles...")
@@ -183,11 +156,13 @@ async def seed_data():
 
         print("Seeding Goals...")
         goals = []
-        for emp in employees:
-            # Each employee gets 3-6 goals
+        all_users = users + managers + employees
+        user_manager_map = {u.id: u.manager_id for u in all_users}
+        for emp in all_users:
+            # Each user gets 3-6 goals
             num_goals = random.randint(*GOALS_PER_EMPLOYEE_RANGE)
             total_weight = 0
-            selected_thrusts = random.sample(THRUST_AREAS, num_goals)
+            selected_thrusts = random.choices(THRUST_AREAS, k=num_goals)
 
             for i in range(num_goals):
                 thrust = selected_thrusts[i]
@@ -198,7 +173,7 @@ async def seed_data():
                     weight = float(random.randint(10, 30))
                     total_weight += weight
 
-                status = random.choice(STATUSES)
+                status = GoalStatus.PENDING_APPROVAL if i == 0 else random.choice(STATUSES)
                 goal = Goal(
                     user_id=emp.id,
                     cycle_id=cycle.id,
@@ -220,11 +195,12 @@ async def seed_data():
 
         print("Seeding Approvals and Shared Goals...")
         for goal in goals:
+            reviewer_id = user_manager_map.get(goal.user_id) or demo_admin.id
             if goal.status == GoalStatus.APPROVED:
                 # Add approval record
                 approval = GoalApproval(
                     goal_id=goal.id,
-                    reviewer_id=random.choice(managers).id,
+                    reviewer_id=reviewer_id,
                     action=ApprovalAction.APPROVED,
                     comments="Looks great, aligned with company objectives."
                 )
@@ -233,7 +209,7 @@ async def seed_data():
                 # Add returned record
                 approval = GoalApproval(
                     goal_id=goal.id,
-                    reviewer_id=random.choice(managers).id,
+                    reviewer_id=reviewer_id,
                     action=ApprovalAction.RETURNED,
                     comments="Please refine the target for this goal, it's too ambiguous."
                 )
@@ -251,7 +227,7 @@ async def seed_data():
                     assignment = SharedGoalAssignment(
                         source_goal_id=goal.id,
                         assigned_to=other.id,
-                        assigned_by=random.choice(managers).id
+                        assigned_by=reviewer_id
                     )
                     session.add(assignment)
 
@@ -260,6 +236,7 @@ async def seed_data():
         print("Seeding Check-ins...")
         checkins = []
         for goal in goals:
+            reviewer_id = user_manager_map.get(goal.user_id) or demo_admin.id
             if goal.status == GoalStatus.APPROVED:
                 for phase in CHECKIN_PHASES:
                     checkin = GoalCheckIn(
@@ -273,7 +250,7 @@ async def seed_data():
                         self_rating=float(random.randint(1, 5)),
                         manager_rating=float(random.randint(1, 5)),
                         created_by=goal.user_id,
-                        updated_by=random.choice(managers).id
+                        updated_by=reviewer_id
                     )
                     checkins.append(checkin)
 

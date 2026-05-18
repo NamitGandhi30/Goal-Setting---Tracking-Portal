@@ -87,7 +87,7 @@ export default function LoginPage() {
           <p className="font-bold uppercase tracking-wider text-foreground">Demo accounts</p>
           <p className="mt-2 font-mono">admin@company.com</p>
           <p className="font-mono">manager@company.com</p>
-          <p className="font-mono">amit@company.com</p>
+          <p className="font-mono">demo1@company.com (up to demo5)</p>
           <p className="mt-2">
             Password: <code className="font-mono text-foreground">password123</code>
           </p>

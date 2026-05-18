@@ -238,7 +238,7 @@ function GoalRow({
         </td>
         {(editable || inlineEditable) && (
           <td className="px-3 py-4 text-right">
-            {editable && !editing && (
+            {editable && !editing && (goal.status === "Draft" || goal.status === "Returned") && (
               <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100">
                 <button
                   type="button"
