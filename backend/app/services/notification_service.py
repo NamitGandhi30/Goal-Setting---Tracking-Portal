@@ -70,7 +70,14 @@ class NotificationService:
         body: str,
     ) -> None:
         to_addresses = [email for email in recipients if email]
-        if not to_addresses or not self.settings.SMTP_HOST or not self.settings.SMTP_FROM_EMAIL:
+        if not to_addresses:
+            return
+
+        if self.settings.RESEND_API_KEY and self.settings.RESEND_FROM_EMAIL:
+            await self._send_resend_email(to_addresses, subject, body)
+            return
+
+        if not self.settings.SMTP_HOST or not self.settings.SMTP_FROM_EMAIL:
             return
 
         message = EmailMessage()
@@ -90,6 +97,30 @@ class NotificationService:
         import anyio
 
         await anyio.to_thread.run_sync(send)
+
+    async def _send_resend_email(
+        self,
+        recipients: list[str],
+        subject: str,
+        body: str,
+    ) -> None:
+        payload: dict[str, object] = {
+            "from": self.settings.RESEND_FROM_EMAIL,
+            "to": recipients,
+            "subject": subject,
+            "text": body,
+        }
+        if self.settings.RESEND_REPLY_TO:
+            payload["reply_to"] = self.settings.RESEND_REPLY_TO
+
+        headers = {"Authorization": f"Bearer {self.settings.RESEND_API_KEY}"}
+        async with httpx.AsyncClient(timeout=10) as client:
+            response = await client.post(
+                "https://api.resend.com/emails",
+                json=payload,
+                headers=headers,
+            )
+            response.raise_for_status()
 
     async def _send_teams(self, title: str, text: str, link: str) -> None:
         if not self.settings.TEAMS_WEBHOOK_URL:

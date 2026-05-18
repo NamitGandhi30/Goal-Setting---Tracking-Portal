@@ -7,6 +7,7 @@ Create Date: 2026-05-17
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "20260517_03"
@@ -20,7 +21,9 @@ def upgrade() -> None:
     for value in ("count", "currency", "hours", "rating", "boolean"):
         op.execute(f"ALTER TYPE unit_of_measure ADD VALUE IF NOT EXISTS '{value}'")
 
-    goal_cadence = sa.Enum("daily", "weekly", "monthly", "quarterly", "annual", name="goal_cadence")
+    goal_cadence = postgresql.ENUM(
+        "daily", "weekly", "monthly", "quarterly", "annual", name="goal_cadence", create_type=False
+    )
     goal_cadence.create(bind, checkfirst=True)
     op.add_column("goals", sa.Column("deadline", sa.Date(), nullable=True))
     op.add_column(

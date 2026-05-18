@@ -17,7 +17,7 @@ type ChatMessage = {
 
 const STARTERS: ChatSuggestion[] = [
   { label: "Stats", message: "Show my Q1 performance stats" },
-  { label: "Create", message: "Create goal Improve NPS target 80 weightage 20" },
+  { label: "Create", message: "Help me create a goal" },
   { label: "Deadline", message: "What are the policy deadlines?" },
 ];
 

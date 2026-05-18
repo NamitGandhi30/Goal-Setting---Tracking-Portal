@@ -36,4 +36,6 @@ comfy-companion-code-main/
 phase2_implementation_plan.md
 backend/backend-dev-8001.err.log
 backend/backend-dev-8001.out.log
+frontend-dev.log
 phase3_implementation_plan.md
+docs/DEPLOYMENT.md

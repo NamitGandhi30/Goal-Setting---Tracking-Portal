@@ -18,14 +18,18 @@ depends_on = None
 
 
 def upgrade() -> None:
-    user_role = sa.Enum("employee", "manager", "admin", name="user_role")
-    unit_of_measure = sa.Enum(
-        "numeric", "percentage", "timeline", "zero_based", name="unit_of_measure"
+    user_role = postgresql.ENUM(
+        "employee", "manager", "admin", name="user_role", create_type=False
     )
-    goal_status = sa.Enum(
-        "draft", "pending_approval", "approved", "returned", name="goal_status"
+    unit_of_measure = postgresql.ENUM(
+        "numeric", "percentage", "timeline", "zero_based", name="unit_of_measure", create_type=False
     )
-    approval_action = sa.Enum("approved", "returned", "edited", name="approval_action")
+    goal_status = postgresql.ENUM(
+        "draft", "pending_approval", "approved", "returned", name="goal_status", create_type=False
+    )
+    approval_action = postgresql.ENUM(
+        "approved", "returned", "edited", name="approval_action", create_type=False
+    )
 
     bind = op.get_bind()
     user_role.create(bind, checkfirst=True)

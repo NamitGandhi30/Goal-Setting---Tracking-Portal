@@ -18,14 +18,15 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
-    audit_action = sa.Enum(
+    audit_action = postgresql.ENUM(
         "employee_edit_after_review",
         "manager_review_edit",
         name="check_in_audit_action",
+        create_type=False,
     )
     audit_action.create(bind, checkfirst=True)
-    progress_status = sa.Enum(
-        "not_started", "on_track", "at_risk", "completed", name="progress_status"
+    progress_status = postgresql.ENUM(
+        "not_started", "on_track", "at_risk", "completed", name="progress_status", create_type=False
     )
 
     op.create_table(

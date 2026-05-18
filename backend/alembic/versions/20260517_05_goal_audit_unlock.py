@@ -18,10 +18,11 @@ depends_on = None
 
 def upgrade() -> None:
     bind = op.get_bind()
-    audit_action = sa.Enum(
+    audit_action = postgresql.ENUM(
         "admin_unlock",
         "locked_goal_change",
         name="goal_audit_action",
+        create_type=False,
     )
     audit_action.create(bind, checkfirst=True)
 

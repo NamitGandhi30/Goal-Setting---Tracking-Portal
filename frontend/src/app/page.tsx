@@ -95,8 +95,8 @@ export default function LoginPage() {
 
         <p className="mt-4 text-center text-xs text-muted-foreground">
           Need access?{" "}
-          <Link href="/" className="font-bold text-foreground hover:text-primary">
-            Contact HR
+          <Link href="/onboarding" className="font-bold text-foreground hover:text-primary">
+            Onboard here
           </Link>
         </p>
       </div>

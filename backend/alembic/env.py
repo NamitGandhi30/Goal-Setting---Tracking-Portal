@@ -1,14 +1,13 @@
 """Alembic env.py – configured for async SQLAlchemy."""
 
 import asyncio
-import os
 import sys
 from pathlib import Path
 from logging.config import fileConfig
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from alembic import context
 
@@ -30,8 +29,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 settings = get_settings()
-db_url = os.getenv("DATABASE_URL", settings.DATABASE_URL)
-config.set_main_option("sqlalchemy.url", db_url)
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 target_metadata = Base.metadata
 
@@ -55,10 +53,10 @@ def do_run_migrations(connection: Connection) -> None:
 
 
 async def run_async_migrations() -> None:
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
+    connectable = create_async_engine(
+        config.get_main_option("sqlalchemy.url"),
         poolclass=pool.NullPool,
+        connect_args=settings.database_connect_args,
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)

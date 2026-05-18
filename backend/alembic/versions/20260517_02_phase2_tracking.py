@@ -17,12 +17,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    check_in_phase = sa.Enum("Q1", "Q2", "Q3", "Q4", name="check_in_phase")
-    progress_status = sa.Enum(
-        "not_started", "on_track", "at_risk", "completed", name="progress_status"
+    check_in_phase = postgresql.ENUM(
+        "Q1", "Q2", "Q3", "Q4", name="check_in_phase", create_type=False
     )
-    tracking_window_type = sa.Enum(
-        "goal_setting", "check_in", "review", name="tracking_window_type"
+    progress_status = postgresql.ENUM(
+        "not_started", "on_track", "at_risk", "completed", name="progress_status", create_type=False
+    )
+    tracking_window_type = postgresql.ENUM(
+        "goal_setting", "check_in", "review", name="tracking_window_type", create_type=False
     )
 
     bind = op.get_bind()

@@ -20,6 +20,14 @@ class UserCreate(BaseModel):
     password: str
 
 
+class UserOnboard(BaseModel):
+    employee_id: str = Field(..., min_length=1, max_length=50)
+    name: str = Field(..., min_length=1, max_length=200)
+    email: EmailStr
+    department: str | None = Field(default=None, max_length=200)
+    password: str = Field(..., min_length=6)
+
+
 class UserCreateAdmin(BaseModel):
     """Admin-only user creation (from admin console)."""
     employee_id: str

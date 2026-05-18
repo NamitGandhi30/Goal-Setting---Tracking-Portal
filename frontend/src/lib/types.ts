@@ -37,6 +37,14 @@ export interface TokenResponse {
   user: User;
 }
 
+export interface OnboardingPayload {
+  employee_id: string;
+  name: string;
+  email: string;
+  department?: string | null;
+  password: string;
+}
+
 export interface GoalCycle {
   id: string;
   name: string;

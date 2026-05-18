@@ -1,22 +1,4 @@
 services:
-  # ── PostgreSQL Database ──────────────────────────────────
-  db:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: goals_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  # ── FastAPI Backend ──────────────────────────────────────
   backend:
     build:
       context: ./backend
@@ -27,13 +9,7 @@ services:
       - ./backend:/app
     env_file:
       - ./backend/.env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/goals_db
-    depends_on:
-      db:
-        condition: service_healthy
 
-  # ── Next.js Frontend ─────────────────────────────────────
   frontend:
     build:
       context: ./frontend
@@ -48,6 +24,3 @@ services:
       NEXT_PUBLIC_API_URL: http://backend:8000
     depends_on:
       - backend
-
-volumes:
-  pgdata:

@@ -9,6 +9,7 @@ import type {
   TrackingWindowCreatePayload, UserCreatePayload, UserUpdatePayload,
   TeamAnalytics, DepartmentAnalytics, TeamTrackingGoal,
   BulkAssignmentPayload, BulkAssignmentResult, CompletionDashboard, GoalAudit,
+  OnboardingPayload,
 } from './types';
 
 const API_BASE = '/api/v1';
@@ -62,6 +63,11 @@ export const auth = {
     request<TokenResponse>(`${API_BASE}/auth/login`, {
       method: 'POST',
       body: JSON.stringify({ email, password }),
+    }),
+  register: (data: OnboardingPayload) =>
+    request<User>(`${API_BASE}/auth/register`, {
+      method: 'POST',
+      body: JSON.stringify(data),
     }),
   me: () => request<User>(`${API_BASE}/auth/me`),
   entra: (token: string) =>

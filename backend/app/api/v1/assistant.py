@@ -120,6 +120,27 @@ async def _deterministic_chat(message: str, normalized: str, current_user, cycle
                     )
                 ],
             )
+        if not _is_goal_create_confirmed(normalized):
+            return ChatResponse(
+                reply=_goal_confirmation_reply(
+                    title=title,
+                    thrust_area=_thrust_area_from_text(normalized),
+                    target=target,
+                    weightage=weightage,
+                    uom=_uom_from_text(normalized, message).value,
+                    cadence=_cadence_from_text(normalized).value,
+                    deadline=_deadline_from_text(normalized).isoformat() if _deadline_from_text(normalized) else None,
+                ),
+                intent="goal_create_needs_confirmation",
+                suggestions=[
+                    ChatSuggestion(
+                        label="Create now",
+                        message=f"Create goal now {title} target {target:g} weightage {weightage:g}",
+                    ),
+                    ChatSuggestion(label="Revise", message="I want to revise this goal"),
+                ],
+            )
+
         goal = await GoalService(db).create_goal(
             current_user.id,
             cycle.id,
@@ -152,7 +173,7 @@ async def _deterministic_chat(message: str, normalized: str, current_user, cycle
             ),
             intent="help",
             suggestions=[
-                ChatSuggestion(label="Create goal", message="Create goal Reduce defects target 2 weightage 15"),
+                ChatSuggestion(label="Create goal", message="Help me create a goal"),
                 ChatSuggestion(label="Log actual", message="Log Q1 actual 72 for Reduce defects"),
                 ChatSuggestion(label="Stats", message="Show my Q1 performance stats"),
             ],
@@ -241,7 +262,9 @@ async def _chat_with_openai(
                 "content": (
                     "You route requests for a goal-setting portal. Use exactly one tool when the "
                     "user asks to create goals, log check-ins, view performance, or view policy windows. "
-                    "Do not invent values. If required values are missing, answer normally with a concise clarification."
+                    "Do not invent values. If required values are missing, answer normally with a concise clarification. "
+                    "Never call create_goal unless the user explicitly confirms with wording like 'create goal now', "
+                    "'confirm create goal', or 'save this goal'."
                 ),
             },
             {
@@ -340,6 +363,25 @@ async def _execute_assistant_tool(name: str, args: dict, message: str, normalize
         required = ("title", "thrust_area", "target", "weightage", "uom", "cadence")
         if any(args.get(key) in (None, "") for key in required):
             return ChatResponse(reply="I need title, thrust area, target, cadence, unit, and weightage to create the goal.", intent="goal_create_missing_details")
+        if not _is_goal_create_confirmed(normalized):
+            return ChatResponse(
+                reply=_goal_confirmation_reply(
+                    title=str(args["title"])[:500],
+                    thrust_area=str(args["thrust_area"])[:300],
+                    target=float(args["target"]),
+                    weightage=float(args["weightage"]),
+                    uom=str(args["uom"]),
+                    cadence=str(args["cadence"]),
+                    deadline=args.get("deadline"),
+                ),
+                intent="goal_create_needs_confirmation",
+                suggestions=[
+                    ChatSuggestion(
+                        label="Create now",
+                        message=f"Create goal now {args['title']} target {float(args['target']):g} weightage {float(args['weightage']):g}",
+                    )
+                ],
+            )
         from datetime import date
 
         goal = await GoalService(db).create_goal(
@@ -409,7 +451,7 @@ def _target_from_text(text: str) -> float | None:
 
 
 def _title_from_text(message: str) -> str:
-    title = re.sub(r"(?i)\b(create|add|new|set|assign)\s+(?:a\s+)?(goal|task|objective)\b", "", message).strip()
+    title = re.sub(r"(?i)\b(create|add|new|set|assign)\s+(?:a\s+)?(goal|task|objective)(?:\s+now)?\b", "", message).strip()
     title = re.split(r"(?i)\btarget\b|\bweightage\b|\bweight\b", title)[0].strip(" :,-")
     return title[:500]
 
@@ -464,6 +506,45 @@ def _deadline_from_text(text: str):
     from datetime import date
 
     return date.fromisoformat(match.group(1))
+
+
+def _is_goal_create_confirmed(text: str) -> bool:
+    return any(
+        phrase in text
+        for phrase in (
+            "create goal now",
+            "confirm create goal",
+            "save this goal",
+            "save goal",
+            "go ahead and create",
+        )
+    )
+
+
+def _goal_confirmation_reply(
+    *,
+    title: str,
+    thrust_area: str,
+    target: float,
+    weightage: float,
+    uom: str,
+    cadence: str,
+    deadline: str | None,
+) -> str:
+    lines = [
+        "I have enough detail to draft this goal, but I will not create it until you confirm.",
+        "",
+        f"Title: {title}",
+        f"Thrust area: {thrust_area}",
+        f"Target: {target:g} ({uom})",
+        f"Weightage: {weightage:g}%",
+        f"Cadence: {cadence}",
+    ]
+    if deadline:
+        lines.append(f"Deadline: {deadline}")
+    lines.append("")
+    lines.append("Reply with 'Create goal now' to save it, or tell me what to change.")
+    return "\n".join(lines)
 
 
 def _match_goal(text: str, goals):

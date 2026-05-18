@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import hash_password, verify_password, create_access_token
 from app.core.dependencies import CurrentUser
 from app.db.session import get_db
-from app.models.user import User
-from app.schemas.user import EntraTokenRequest, LoginRequest, TokenResponse, UserOut, UserCreate
+from app.models.user import User, UserRole
+from app.schemas.user import EntraTokenRequest, LoginRequest, TokenResponse, UserOut, UserOnboard
 from app.services.entra_service import EntraService
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -54,21 +54,23 @@ async def entra_login(
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 async def register(
-    body: UserCreate,
+    body: UserOnboard,
     db: Annotated[AsyncSession, Depends(get_db)],
 ):
-    """Register a new user (dev/admin utility – will be replaced by Entra ID sync)."""
+    """Public onboarding for a new employee account."""
     existing = await db.execute(select(User).where(User.email == body.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status.HTTP_409_CONFLICT, "Email already registered")
+    existing_eid = await db.execute(select(User).where(User.employee_id == body.employee_id))
+    if existing_eid.scalar_one_or_none():
+        raise HTTPException(status.HTTP_409_CONFLICT, "Employee ID already registered")
 
     user = User(
-        employee_id=body.employee_id,
-        name=body.name,
+        employee_id=body.employee_id.strip(),
+        name=body.name.strip(),
         email=body.email,
-        role=body.role,
-        manager_id=body.manager_id,
-        department=body.department,
+        role=UserRole.EMPLOYEE,
+        department=body.department.strip() if body.department else None,
         hashed_password=hash_password(body.password),
     )
     db.add(user)

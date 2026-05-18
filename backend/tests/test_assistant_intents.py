@@ -47,3 +47,21 @@ def test_assistant_create_goal_requires_target_and_weightage():
 
     assert response.intent == "goal_create_missing_details"
     assert response.action_taken is False
+
+
+def test_assistant_create_goal_requires_confirmation_before_write():
+    cycle = SimpleNamespace(id=uuid.uuid4(), name="FY Test", start_date=date.today(), end_date=date.today())
+    response = asyncio.run(
+        _deterministic_chat(
+            "Create goal Improve onboarding target 90 weightage 20",
+            "create goal improve onboarding target 90 weightage 20",
+            SimpleNamespace(id=uuid.uuid4()),
+            cycle,
+            [],
+            None,
+        )
+    )
+
+    assert response.intent == "goal_create_needs_confirmation"
+    assert response.action_taken is False
+    assert "Create goal now" in response.reply

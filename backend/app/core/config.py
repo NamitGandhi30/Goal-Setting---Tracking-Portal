@@ -1,8 +1,14 @@
 """Application configuration via environment variables."""
 
+from uuid import uuid4
+from pathlib import Path
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
 from pydantic_settings import BaseSettings
 from pydantic import field_validator
 from functools import lru_cache
+
+BACKEND_DIR = Path(__file__).resolve().parents[2]
 
 
 class Settings(BaseSettings):
@@ -12,7 +18,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # ── Database ─────────────────────────────────────────
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@127.0.0.1:5432/goals_db"
+    DATABASE_URL: str
 
     # ── Auth (JWT – mock for Phase 1, swap to Entra ID later)
     SECRET_KEY: str = "dev-secret-change-in-production"
@@ -39,6 +45,9 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str | None = None
     SMTP_FROM_EMAIL: str | None = None
     SMTP_USE_TLS: bool = True
+    RESEND_API_KEY: str | None = None
+    RESEND_FROM_EMAIL: str | None = None
+    RESEND_REPLY_TO: str | None = None
     TEAMS_WEBHOOK_URL: str | None = None
 
     # Microsoft Entra ID integration
@@ -60,7 +69,51 @@ class Settings(BaseSettings):
                 return True
         return value
 
-    model_config = {"env_file": ".env", "extra": "ignore"}
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def normalize_database_url(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+
+        url = value.strip()
+        if not url:
+            return url
+
+        parsed = urlsplit(url)
+        scheme = parsed.scheme
+        if scheme in {"postgres", "postgresql"}:
+            scheme = "postgresql+asyncpg"
+
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        if "sslmode" in query and "ssl" not in query:
+            query["ssl"] = query.pop("sslmode")
+
+        host = parsed.hostname or ""
+        if "supabase.com" in host and "ssl" not in query:
+            query["ssl"] = "require"
+        if "pooler.supabase.com" in host:
+            query.setdefault("prepared_statement_cache_size", "0")
+
+        return urlunsplit(
+            (
+                scheme,
+                parsed.netloc,
+                parsed.path,
+                urlencode(query),
+                parsed.fragment,
+            )
+        )
+
+    @property
+    def database_connect_args(self) -> dict[str, object]:
+        if "pooler.supabase.com" in self.DATABASE_URL:
+            return {
+                "statement_cache_size": 0,
+                "prepared_statement_name_func": lambda: f"__asyncpg_{uuid4()}__",
+            }
+        return {}
+
+    model_config = {"env_file": BACKEND_DIR / ".env", "extra": "ignore"}
 
 
 @lru_cache
